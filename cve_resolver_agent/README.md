@@ -776,6 +776,31 @@ Y continuará con el procesamiento normal.
 - `C:\Program Files\Eclipse Adoptium\jdk-*`
 - `C:\Program Files\Amazon Corretto\jdk-*`
 
+### Consola congelada al cancelar (Ctrl+C)
+
+**Problema:** Al presionar Ctrl+C para cancelar el proceso, la consola se queda congelada o no responde.
+
+**Causa:** El agente ahora usa procesos paralelos y subprocesos de Gradle que deben terminarse limpiamente.
+
+**Solución:** El agente v1.0.0 incluye manejo de señales que:
+1. **Captura Ctrl+C (SIGINT)** y termina el proceso limpiamente
+2. **Cancela hilos activos** del ThreadPoolExecutor
+3. **Termina procesos de Gradle** que estén corriendo
+4. **Muestra mensaje de despedida** antes de salir
+
+**Comportamiento:**
+```
+⚠️  Proceso interrumpido por el usuario. Terminando de forma limpia...
+
+👋 Proceso interrumpido por el usuario.
+```
+
+**Si la consola sigue congelada:**
+- En Windows: Cierra la ventana de la consola o usa el Administrador de tareas
+- En macOS/Linux: Usa `kill -9 <pid>` desde otra terminal
+
+**Nota:** Los cambios ya aplicados a los archivos **NO** se revierten automáticamente al cancelar. Revisa los backups en `.cve_resolver_backups/` si necesitas restaurar.
+
 ## Licencia
 
 Uso interno - Herramienta de seguridad defensiva

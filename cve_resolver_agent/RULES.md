@@ -2,14 +2,40 @@
 
 ## 1. Arquitectura de Archivos
 
-### 1.1 build.gradle
+### 1.1 Estructura de Archivos Gradle
+
+```
+ms_upload_documents/
+├── build.gradle              # Entry point - Define TODAS las variables de versión
+├── main.gradle               # Configuración adicional (tests, jacoco)
+├── dependencyMgmt.gradle     # Resolución de dependencias con useVersion
+└── ...
+```
+
+#### Flujo de aplicación:
+1. **build.gradle** define variables en `buildscript.ext` y aplica `dependencyMgmt.gradle`
+2. **build.gradle** aplica `main.gradle` al final para configuración adicional
+3. **main.gradle** NO debe aplicar `dependencyMgmt.gradle` (ya lo hace build.gradle)
+4. **main.gradle** NO debe redefinir variables de versión (solo build.gradle las define)
+
+### 1.2 build.gradle (Entry Point)
 - **Propósito**: Declarar variables de versión únicamente
 - **Ubicación**: Raíz del microservicio
 - **Bloque**: `buildscript { ext { ... } }`
 - **Contenido**: Solo variables de versión, sin lógica de resolución
 - **Formato**: `variableVersion = 'x.y.z'`
+- **Responsabilidad**: Aplica `dependencyMgmt.gradle` y luego `main.gradle`
 
-### 1.2 dependencyMgmt.gradle
+### 1.3 main.gradle (Configuración Adicional)
+- **Propósito**: Configuración de tests, jacoco, y otras tareas
+- **Ubicación**: Raíz del microservicio (importado por build.gradle)
+- **Restricciones**:
+  - ✅ PUEDE definir variables de plugin (springBootVersion, etc.)
+  - ❌ NO debe definir variables CVE (springFrameworkVersion, jacksonVersion, etc.)
+  - ❌ NO debe aplicar `dependencyMgmt.gradle` (ya lo hace build.gradle)
+- **Contenido**: Configuración de tasks, testLogging, jacoco, etc.
+
+### 1.4 dependencyMgmt.gradle
 - **Propósito**: Forzar versiones mediante `resolutionStrategy`
 - **Ubicación**: Raíz del microservicio (importado por build.gradle)
 - **Bloque**: `configurations.all { resolutionStrategy.eachDependency { ... } }`
@@ -183,7 +209,100 @@ gradle compileJava --no-daemon -q
 - Útil en CI/CD donde la compilación se hace en otro paso
 - Más rápido pero sin validación de cambios
 
-## 8. Backups
+## 8. Manejo de Archivos Múltiples (build.gradle + main.gradle)
+
+### 8.1 Estructura Correcta
+
+**build.gradle (Entry Point):**
+```gradle
+buildscript {
+    ext {
+        // ✅ Variables CVE - SOLO aquí se definen
+        springFrameworkVersion = '6.1.14'
+        jacksonVersion = '2.17.2'
+        nettyVersion = '4.1.132.Final'
+        // ... otras variables CVE
+    }
+}
+
+// Aplica resolución de dependencias
+apply from: 'dependencyMgmt.gradle'
+
+// ... resto de configuración ...
+
+// Aplica configuración adicional al final
+apply from: 'main.gradle'
+```
+
+**main.gradle (Configuración Adicional):**
+```gradle
+allprojects {
+    // ❌ NO redefinir variables CVE aquí
+    // Las variables vienen de build.gradle (buildscript.ext)
+    apply from: "${rootDir}/dependencyMgmt.gradle"
+}
+
+// Configuración de tests, jacoco, etc.
+```
+
+### 8.2 Comportamiento del Agente
+
+| Archivo | Variables CVE | useVersion blocks | Configuración |
+|---------|--------------|-------------------|---------------|
+| **build.gradle** | ✅ Actualiza/Agrega | ❌ No modifica | ❌ No modifica |
+| **main.gradle** | ❌ No modifica | ❌ No modifica | ❌ No modifica |
+| **dependencyMgmt.gradle** | ❌ No modifica | ✅ Agrega si falta | ❌ No modifica |
+
+### 8.3 Reglas Importantes
+
+1. **Variables CVE solo en build.gradle**
+   - El agente SOLO modifica `build.gradle` para agregar/actualizar variables
+   - `main.gradle` NO debe tener variables CVE en su `buildscript.ext`
+   - Si `main.gradle` tiene su propio `buildscript.ext` con variables CVE, esas se ignoran
+
+2. **Order de aplicación**
+   - `build.gradle` define variables → aplica `dependencyMgmt.gradle` → aplica `main.gradle`
+   - Esto asegura que las variables estén disponibles para todos los archivos
+
+3. **Dependencias directas**
+   - El agente busca dependencias directas (`implementation 'group:name:version'`) en TODOS los `build.gradle`
+   - Esto incluye submódulos
+   - Las versiones hardcodeadas se actualizan a variables cuando es posible
+
+### 8.4 Ejemplo de Escenario
+
+**Entrada CVE:**
+```json
+{
+  "cve_id": "CVE-2024-26308",
+  "group": "org.apache.commons",
+  "library_name": "commons-compress",
+  "fixed_version": "1.27.1"
+}
+```
+
+**Acciones del agente:**
+
+1. **build.gradle:**
+   - Agrega `commonsCompressVersion = '1.27.1'` al bloque `buildscript.ext` (si no existe)
+   - O actualiza versión existente
+
+2. **dependencyMgmt.gradle:**
+   - Verifica si existe bloque `useVersion` para `org.apache.commons`
+   - Si falta, agrega bloque con verificación específica del artifact:
+     ```gradle
+     if (details.requested.group == 'org.apache.commons' && 
+         details.requested.name == 'commons-compress') {
+         details.useVersion "${commonsCompressVersion}"
+         details.because "Fix: CVE-2024-26308"
+     }
+     ```
+
+3. **main.gradle:**
+   - **NO SE MODIFICA**
+   - Las variables definidas aquí se ignoran
+
+## 10. Backups
 
 ### 8.1 Ubicación
 `.cve_resolver_backups/` en la raíz del proyecto
@@ -209,7 +328,7 @@ cp .cve_resolver_backups/dependencyMgmt.gradle.20260417_120530.backup dependency
 
 ## 9. Salida del Agente
 
-### 9.1 Reporte JSON
+### 10.1 Reporte JSON
 Archivo: `cve_resolver_report.json` en el proyecto
 
 ```json
@@ -230,7 +349,7 @@ Archivo: `cve_resolver_report.json` en el proyecto
 }
 ```
 
-### 9.2 Campos del Reporte
+### 10.2 Campos del Reporte
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
 | `total_cves` | int | Número total de CVEs procesados |
@@ -244,7 +363,7 @@ Archivo: `cve_resolver_report.json` en el proyecto
 | `rollback_performed` | bool | Indica si se ejecutó rollback |
 | `dry_run` | bool | Indica si fue modo simulación |
 
-### 9.3 Salida en Consola
+### 10.3 Salida en Consola
 - Lista de CVEs cargados por severidad
 - Advertencias de validación (CVEs omitidos, versiones problemáticas)
 - Acciones realizadas (ADDED/UPDATED/SKIPPED)
@@ -253,21 +372,21 @@ Archivo: `cve_resolver_report.json` en el proyecto
 - Resultado de compilación (si aplica)
 - Resumen final
 
-## 10. Casos de Error
+## 11. Casos de Error
 
-### 10.1 Archivo CVE No Encontrado
+### 11.1 Archivo CVE No Encontrado
 - Mensaje: "Archivo CVE no encontrado"
 - Acción: Termina ejecución con código 1
 
-### 10.2 Proyecto No Encontrado
+### 11.2 Proyecto No Encontrado
 - Mensaje: "Proyecto no encontrado"
 - Acción: Termina ejecución con código 1
 
-### 10.3 Formato JSON Inválido
+### 11.3 Formato JSON Inválido
 - Python lanza excepción JSONDecodeError
 - Acción: Termina ejecución con traceback
 
-### 10.4 dependencyMgmt.gradle No Existe
+### 11.4 dependencyMgmt.gradle No Existe
 - Comportamiento: Solo actualiza build.gradle
 - No genera error
 

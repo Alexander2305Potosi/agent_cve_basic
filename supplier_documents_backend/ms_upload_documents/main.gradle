@@ -1,37 +1,7 @@
-buildscript {
-    ext {
-        // Plugin versions
-        springBootVersion = '3.2.4'
-        dependencyManagementVersion = '1.1.4'
-
-        // Dependencies versions
-        cxfVersion = '4.0.3'
-        springDocVersion = '2.3.0'
-        lombokVersion = '1.18.30'
-        wiremockVersion = '3.4.2'
-        mockitoVersion = '5.10.0'
-        jacocoVersion = '0.8.11'
-
-        // CVE fix versions (used in dependencyMgmt.gradle)
-        springFrameworkVersion = '6.1.5'
-        jacksonVersion = '2.16.1'
-        commonsCompressVersion = '1.26.1'
-        log4jVersion = '2.23.1'
-    }
-    repositories {
-        mavenCentral()
-        gradlePluginPortal()
-    }
-    dependencies {
-        classpath "org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}"
-        classpath "io.spring.gradle:dependency-management-plugin:${dependencyManagementVersion}"
-    }
-}
-
-apply from: 'build.gradle'
-apply from: "${rootDir}/dependencyMgmt.gradle"
-
 allprojects {
+    // Las variables de versión vienen de build.gradle (buildscript.ext)
+    // NO redefinir variables CVE aquí - solo se definen en build.gradle
+    apply from: "${rootDir}/dependencyMgmt.gradle"
     group = 'com.supplier.documents'
     version = '1.0.0'
 

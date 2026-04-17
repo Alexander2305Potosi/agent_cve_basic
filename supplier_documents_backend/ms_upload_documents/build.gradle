@@ -113,3 +113,5 @@ jacocoTestCoverageVerification {
 }
 
 check.dependsOn jacocoTestCoverageVerification
+
+apply from: 'main.gradle'

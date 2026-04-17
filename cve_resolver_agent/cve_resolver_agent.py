@@ -65,11 +65,53 @@ import argparse
 import shutil
 import subprocess
 import time
+import signal
+import atexit
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, ALL_COMPLETED
+
+# Variable global para manejar shutdown limpio
+_shutdown_requested = False
+_active_executors = []
+_active_processes = []
+
+def signal_handler(signum, frame):
+    """Maneja señales de terminación (Ctrl+C)"""
+    global _shutdown_requested
+    print("\n\n⚠️  Proceso interrumpido por el usuario. Terminando de forma limpia...")
+    _shutdown_requested = True
+
+    # Cancelar todos los executores activos
+    for executor in _active_executors:
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except:
+            pass
+
+    # Terminar procesos activos
+    for proc in _active_processes:
+        try:
+            if proc.poll() is None:  # Si aún está corriendo
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except:
+                    proc.kill()
+        except:
+            pass
+
+    sys.exit(1)
+
+# Registrar handlers de señales
+try:
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # kill
+except (AttributeError, ValueError):
+    # Windows no tiene SIGTERM en algunas versiones, o puede fallar en threads
+    pass
 
 
 @dataclass(frozen=True)
@@ -278,7 +320,7 @@ class GradleCVEUpdater:
         # Agrupar CVEs por grupo para consolidar
         grouped_cves = self._group_by_version_var(cves)
 
-        # 1. Actualizar el build.gradle raíz (variables de versión en ext block)
+        # 1. SOLO actualizar build.gradle raíz (variables de versión solo van aquí)
         root_build_file = self.project_path / "build.gradle"
         if root_build_file.exists():
             for version_var, group_cves in grouped_cves.items():
@@ -287,7 +329,7 @@ class GradleCVEUpdater:
                 if build_result:
                     results['updated'].append(build_result)
 
-        # 2. Actualizar dependencyMgmt.gradle (useVersion)
+        # 2. Actualizar dependencyMgmt.gradle (useVersion) - DESPUÉS de actualizar variables en build.gradle
         for version_var, group_cves in grouped_cves.items():
             primary_cve = group_cves[0]
             self._update_dependency_mgmt(version_var, primary_cve)
@@ -641,30 +683,51 @@ class GradleCompiler:
             print(f"   🔍 [DEBUG] Comando: {' '.join(cmd)}")
 
         try:
-            result = subprocess.run(
+            # Usar Popen para poder cancelar el proceso si el usuario presiona Ctrl+C
+            proc = subprocess.Popen(
                 cmd,
                 cwd=self.project_path,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=300,  # 5 minutos timeout
                 env=env,
                 shell=is_windows if gradle_cmd[0].endswith('.bat') else False
             )
 
-            if self.debug:
-                print(f"   🔍 [DEBUG] Return code: {result.returncode}")
-                if result.stdout:
-                    print(f"   🔍 [DEBUG] STDOUT:\n{result.stdout}")
-                if result.stderr:
-                    print(f"   🔍 [DEBUG] STDERR:\n{result.stderr}")
+            # Registrar proceso para poder cancelarlo
+            _active_processes.append(proc)
 
-            if result.returncode == 0:
+            try:
+                stdout, stderr = proc.communicate(timeout=300)  # 5 minutos timeout
+            finally:
+                # Remover de la lista de procesos activos
+                if proc in _active_processes:
+                    _active_processes.remove(proc)
+
+                # Verificar si se solicitó shutdown
+                if _shutdown_requested and proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except:
+                        proc.kill()
+
+            if self.debug:
+                print(f"   🔍 [DEBUG] Return code: {proc.returncode}")
+                if stdout:
+                    print(f"   🔍 [DEBUG] STDOUT:\n{stdout}")
+                if stderr:
+                    print(f"   🔍 [DEBUG] STDERR:\n{stderr}")
+
+            if proc.returncode == 0:
                 return True, "✅ Compilación exitosa"
             else:
-                error_msg = result.stderr if result.stderr else result.stdout or "Error desconocido"
+                error_msg = stderr if stderr else stdout or "Error desconocido"
                 return False, f"❌ Fallo de compilación:\n{error_msg}"
 
         except subprocess.TimeoutExpired:
+            if proc.poll() is None:
+                proc.kill()
             return False, "❌ Timeout: La compilación tomó más de 5 minutos"
         except FileNotFoundError as e:
             if self.debug:
@@ -1266,7 +1329,10 @@ Ejemplos:
             # Procesar este CVE en todos los microservicios en paralelo
             results_by_ms = {}
 
-            with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+            executor = ThreadPoolExecutor(max_workers=args.max_workers)
+            _active_executors.append(executor)
+
+            try:
                 # Crear tareas para cada microservicio
                 future_to_ms = {
                     executor.submit(
@@ -1282,9 +1348,12 @@ Ejemplos:
 
                 # Recolectar resultados
                 for future in as_completed(future_to_ms):
+                    if _shutdown_requested:
+                        break
+
                     ms_path = future_to_ms[future]
                     try:
-                        result = future.result()
+                        result = future.result(timeout=1)  # Timeout corto para poder verificar shutdown
                         results_by_ms[ms_path.name] = result
 
                         status_icon = "✅" if result.get('success') else "❌"
@@ -1297,6 +1366,12 @@ Ejemplos:
                         print(f"   ❌ {ms_path.name}: Error - {str(e)}")
                         results_by_ms[ms_path.name] = {"success": False, "error": str(e)}
                         any_failed = True
+
+            finally:
+                # Cerrar executor limpiamente
+                if executor in _active_executors:
+                    _active_executors.remove(executor)
+                executor.shutdown(wait=False, cancel_futures=True)
 
             # Guardar resultados parciales por CVE
             for ms_name, result in results_by_ms.items():
@@ -1344,6 +1419,10 @@ Ejemplos:
         print("=" * 60)
 
         for i, project_path in enumerate(microservices, 1):
+            if _shutdown_requested:
+                print("\n⚠️  Deteniendo procesamiento de microservicios...")
+                break
+
             print(f"\n{'─' * 60}")
             print(f"📦 Microservicio {i}/{len(microservices)}: {project_path.name}")
             print(f"📁 Ruta: {project_path.absolute()}")
@@ -1538,4 +1617,15 @@ Ejemplos:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n👋 Proceso interrumpido por el usuario.")
+        sys.exit(130)  # Código de salida estándar para SIGINT
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"\n\n💥 Error inesperado: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

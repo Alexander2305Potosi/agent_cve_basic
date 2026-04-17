@@ -33,6 +33,8 @@ if "%~2"=="--debug" (
     set DEBUG_ARG=--debug
 )
 echo.
+echo Para cancelar: Presiona Ctrl+C y espera a que termine limpiamente
+echo.
 
 REM Configurar JAVA_HOME si está instalado en ubicaciones comunes
 if not defined JAVA_HOME (
