@@ -1,6 +1,4 @@
 allprojects {
-    // Las variables de versión vienen de build.gradle (buildscript.ext)
-    // NO redefinir variables CVE aquí - solo se definen en build.gradle
     apply from: "${rootDir}/dependencyMgmt.gradle"
     group = 'com.supplier.documents'
     version = '1.0.0'

@@ -31,6 +31,11 @@ Este documento describe los escenarios de prueba ejecutados para validar el comp
 | **23** | **Monorepo Reporte Consolidado** | **✅ PASSED** | **Generar reporte consolidado** |
 | **24** | **Monorepo Error Parcial** | **✅ PASSED** | **Continuar si un MS falla** |
 | **25** | **Monorepo Backups Separados** | **✅ PASSED** | **Backups independientes por MS** |
+| **37** | **Variables Subcarpetas** | **✅ PASSED** | **Usar ${variable} en submódulos, no hardcoded** |
+| **38** | **Variables Pre-existentes** | **✅ PASSED** | **No modificar variables ya existentes** |
+| **39** | **useVersion Nueva Variable** | **✅ PASSED** | **Agregar useVersion al crear variable** |
+| **40** | **Manejo Ctrl+C** | **✅ PASSED** | **Terminar proceso limpiamente sin congelar** |
+| **41** | **Estructura build+main** | **✅ PASSED** | **Solo modificar build.gradle, ignorar main.gradle** |
 
 ---
 
@@ -1094,6 +1099,13 @@ Speedup: ~5x más rápido
 - [x] Escenario 35: Paralelo con rollback
 - [x] Escenario 36: Comparativa secuencial vs paralelo (5x speedup)
 
+### Correcciones Variables v1.0.0
+- [x] Escenario 37: Variables en subcarpetas usan ${variable}
+- [x] Escenario 38: Variables pre-existentes se respetan
+- [x] Escenario 39: dependencyMgmt.gradle agrega useVersion para variables nuevas
+- [x] Escenario 40: Manejo de interrupción (Ctrl+C)
+- [x] Escenario 41: Estructura correcta build.gradle + main.gradle
+
 ---
 
 ## Comandos de Ejecución
@@ -1137,6 +1149,254 @@ grep "nettyVersion" build.gradle
 - Integración Git: Nuevo argumento `--commit` para crear commits automáticos
 - Rama automática: Crea rama `feature/fix_vulnerabilidad_{ddmmyyyy}_{username}`
 - Mensaje descriptivo: Commit incluye microservicios modificados, CVEs resueltos, severidad y archivos cambiados
+
+### Cambios v1.0.0 (Correcciones)
+- Variables en subcarpetas: Las dependencias en submódulos ahora usan variables (${nettyVersion}) en lugar de versiones hardcodeadas
+- dependencyMgmt.gradle: Ahora agrega correctamente bloques useVersion cuando se crean variables nuevas
+- Manejo de señales: Ctrl+C termina el proceso limpiamente sin dejar la consola congelada
+
+---
+
+## Escenarios v1.0.0 (Correcciones de Variables)
+
+### Escenario 37: Variables en Subcarpetas build.gradle
+
+**Objetivo**: Verificar que las dependencias en build.gradle de subcarpetas usan variables en lugar de versiones hardcodeadas
+
+**Pre-condición**:
+```
+project/
+├── build.gradle              # Tiene nettyVersion = '4.1.132.Final'
+├── dependencyMgmt.gradle     # Tiene useVersion para io.netty
+└── submodule/
+    └── build.gradle          # Tiene: implementation 'io.netty:netty-codec-http2:4.1.86.Final'
+```
+
+**Archivo CVE**:
+```json
+{
+  "cves": [{
+    "cve_id": "CVE-2026-33871",
+    "library_name": "netty-codec-http2",
+    "group": "io.netty",
+    "fixed_version": "4.1.132.Final",
+    "severity": "CRITICAL"
+  }]
+}
+```
+
+**Comando**: `python3 cve_resolver_agent.py /ruta/proyecto --apply`
+
+**Resultado Esperado (ANTES - Incorrecto)**:
+```gradle
+// submodule/build.gradle
+implementation 'io.netty:netty-codec-http2:4.1.132.Final'  // ❌ Versión hardcodeada
+```
+
+**Resultado Esperado (DESPUÉS - Correcto)**:
+```gradle
+// submodule/build.gradle
+implementation 'io.netty:netty-codec-http2:${nettyVersion}'  // ✅ Usa variable
+```
+
+**Verificación**:
+```bash
+grep "netty-codec-http2" submodule/build.gradle
+# Debe mostrar: ${nettyVersion} no 4.1.132.Final
+```
+
+**Estado**: ✅ PASSED
+
+---
+
+### Escenario 38: Variables Pre-existentes en Subcarpetas
+
+**Objetivo**: Verificar que las dependencias que ya usan variables NO se modifican
+
+**Pre-condición**:
+```gradle
+// submodule/build.gradle
+implementation 'io.netty:netty-codec-http2:${nettyVersion}'
+```
+
+**Archivo CVE**: Misma versión que ya está en la variable
+
+**Resultado Esperado**:
+```
+⏭️  nettyVersion: Ya está en versión 4.1.132.Final
+```
+
+**Estado**: ✅ PASSED
+
+---
+
+### Escenario 39: dependencyMgmt.gradle Agrega useVersion para Nueva Variable
+
+**Objetivo**: Verificar que cuando se crea una variable nueva en build.gradle, dependencyMgmt.gradle agrega el bloque useVersion correspondiente
+
+**Pre-condición**:
+```gradle
+// build.gradle - NO tiene commonsCompressVersion
+buildscript {
+    ext {
+        // otras variables...
+    }
+}
+```
+
+```gradle
+// dependencyMgmt.gradle
+configurations.all {
+    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+        // NO tiene bloque para org.apache.commons
+    }
+}
+```
+
+**Archivo CVE**:
+```json
+{
+  "cves": [{
+    "cve_id": "CVE-2024-26308",
+    "library_name": "commons-compress",
+    "group": "org.apache.commons",
+    "fixed_version": "1.27.1",
+    "severity": "HIGH"
+  }]
+}
+```
+
+**Comando**: `python3 cve_resolver_agent.py /ruta/proyecto --apply`
+
+**Resultado Esperado**:
+```
+✓ commonsCompressVersion: ADDED → 1.27.1
+✓ Added useVersion for org.apache.commons using ${commonsCompressVersion}
+```
+
+**Verificación en dependencyMgmt.gradle**:
+```gradle
+if (details.requested.group == 'org.apache.commons' && details.requested.name == 'commons-compress') {
+    details.useVersion "${commonsCompressVersion}"
+    details.because "Fix: CVE-2024-26308"
+}
+```
+
+**Estado**: ✅ PASSED
+
+---
+
+### Escenario 40: Manejo de Interrupción (Ctrl+C)
+
+**Objetivo**: Verificar que al presionar Ctrl+C el proceso termina limpiamente sin congelar la consola
+
+**Comando**: `python3 cve_resolver_agent.py --folder ../supplier_documents_backend --apply`
+
+**Acción**: Durante el procesamiento, presionar Ctrl+C
+
+**Resultado Esperado**:
+```
+🔨 Compilando proyecto para validar cambios...
+   📝 Usando Java: /Library/Java/...
+
+⚠️  Proceso interrumpido por el usuario. Terminando de forma limpia...
+
+👋 Proceso interrumpido por el usuario.
+```
+
+**Verificación**:
+- La consola NO se congela
+- El prompt vuelve inmediatamente
+- Procesos de Gradle en segundo plano se terminan
+
+**Estado**: ✅ PASSED
+
+---
+
+### Escenario 41: Estructura build.gradle + main.gradle Correcta
+
+**Objetivo**: Verificar que el agente solo modifica variables en build.gradle, no en main.gradle
+
+**Pre-condición**:
+```
+ms_upload_documents/
+├── build.gradle      # Entry point con buildscript.ext
+├── main.gradle       # Configuración adicional con allprojects
+└── dependencyMgmt.gradle
+```
+
+**build.gradle**:
+```gradle
+buildscript {
+    ext {
+        springFrameworkVersion = '6.1.5'  // Versión vieja
+    }
+}
+apply from: 'dependencyMgmt.gradle'
+// ... resto de configuración ...
+apply from: 'main.gradle'
+```
+
+**main.gradle**:
+```gradle
+allprojects {
+    // Las variables de versión vienen de build.gradle (buildscript.ext)
+    // NO redefinir variables CVE aquí - solo se definen en build.gradle
+    apply from: "${rootDir}/dependencyMgmt.gradle"
+    group = 'com.supplier.documents'
+    version = '1.0.0'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+apply plugin: 'jacoco'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+// ... resto de configuración ...
+```
+
+**Archivo CVE**: CVE que requiere actualizar springFrameworkVersion
+
+**Comando**: `python3 cve_resolver_agent.py /ruta/ms_upload_documents --apply`
+
+**Resultado Esperado**:
+```
+✓ springFrameworkVersion: 6.1.5 → 6.1.14  # Solo en build.gradle
+```
+
+**Verificación**:
+- `build.gradle`: Tiene la versión actualizada ✅
+- `build.gradle`: Aplica `dependencyMgmt.gradle` directamente ✅
+- `main.gradle`: Aplica `dependencyMgmt.gradle` dentro de `allprojects { }` ✅
+- `main.gradle`: NO tiene variables CVE (solo configuración) ✅
+- `main.gradle`: NO se modifica en absoluto ✅
+
+**Nota importante**: La diferencia clave es:
+- `build.gradle`: `apply from: 'dependencyMgmt.gradle'` (directo)
+- `main.gradle`: `allprojects { apply from: "${rootDir}/dependencyMgmt.gradle" }` (dentro de allprojects)
+
+Esto asegura que todos los subproyectos hereden la resolución de dependencias.
+
+**Estado**: ✅ PASSED
+
+---
+
+## Checklist de Validación Final (Actualizado)
+
+### Correcciones Variables v1.0.0
+- [x] Escenario 37: Variables en subcarpetas usan ${variable}
+- [x] Escenario 38: Variables pre-existentes se respetan
+- [x] Escenario 39: dependencyMgmt.gradle agrega useVersion para variables nuevas
+- [x] Escenario 40: Ctrl+C termina proceso limpiamente
+- [x] Escenario 41: Solo build.gradle se modifica, main.gradle se ignora
 - Detección de usuario: Detecta automáticamente el nombre de usuario de git
 - Validación de repo: Verifica que sea un repositorio git antes de intentar commitear
 - 35 tests unitarios (6 nuevos para integración Git)

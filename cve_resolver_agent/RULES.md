@@ -237,13 +237,26 @@ apply from: 'main.gradle'
 **main.gradle (Configuración Adicional):**
 ```gradle
 allprojects {
-    // ❌ NO redefinir variables CVE aquí
-    // Las variables vienen de build.gradle (buildscript.ext)
+    // Las variables de versión vienen de build.gradle (buildscript.ext)
+    // NO redefinir variables CVE aquí - solo se definen en build.gradle
     apply from: "${rootDir}/dependencyMgmt.gradle"
+    group = 'com.supplier.documents'
+    version = '1.0.0'
+
+    repositories {
+        mavenCentral()
+    }
 }
 
-// Configuración de tests, jacoco, etc.
+apply plugin: 'java'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+apply plugin: 'jacoco'
+
+// Configuración de Java, tests, jacoco, etc.
 ```
+
+**Importante**: `main.gradle` aplica `dependencyMgmt.gradle` dentro de `allprojects { }` para que todos los subproyectos hereden la resolución de dependencias. Esto es diferente de `build.gradle` que aplica `dependencyMgmt.gradle` directamente (no dentro de allprojects).
 
 ### 8.2 Comportamiento del Agente
 
@@ -302,25 +315,55 @@ allprojects {
    - **NO SE MODIFICA**
    - Las variables definidas aquí se ignoran
 
-## 10. Backups
+### 8.5 Dependencias Directas en Subcarpetas
 
-### 8.1 Ubicación
+**Problema**: Las dependencias directas en `subcarpeta/build.gradle` usan versiones hardcodeadas que no heredan la versión segura.
+
+**Solución**: El agente actualiza las dependencias directas para usar variables de versión.
+
+**Ejemplo**:
+
+ANTES (incorrecto):
+```gradle
+// submodule/build.gradle
+dependencies {
+    implementation 'io.netty:netty-codec-http2:4.1.86.Final'
+}
+```
+
+DESPUÉS (correcto):
+```gradle
+// submodule/build.gradle
+dependencies {
+    implementation 'io.netty:netty-codec-http2:${nettyVersion}'
+}
+```
+
+**Reglas**:
+- ✅ Se reemplazan versiones hardcodeadas con variables
+- ✅ Se preservan variables existentes (no se tocan)
+- ✅ Solo afecta a grupos mapeados en VERSION_MAP
+- ✅ Funciona en cualquier nivel de subcarpeta
+
+## 9. Backups
+
+### 9.1 Ubicación
 `.cve_resolver_backups/` en la raíz del proyecto
 
-### 8.2 Nomenclatura
+### 9.2 Nomenclatura
 `{nombre_archivo}.{YYYYMMDD_HHMMSS}.backup`
 
 Ejemplos:
 - `build.gradle.20260417_120530.backup`
 - `dependencyMgmt.gradle.20260417_120530.backup`
 
-### 8.3 Política
+### 9.3 Política
 - Se crea backup ANTES de cualquier modificación
 - Un backup por archivo por ejecución del agente
 - No se eliminan automáticamente
 - Responsabilidad del usuario gestionarlos
 
-### 8.4 Restauración Manual
+### 9.4 Restauración Manual
 ```bash
 cp .cve_resolver_backups/build.gradle.20260417_120530.backup build.gradle
 cp .cve_resolver_backups/dependencyMgmt.gradle.20260417_120530.backup dependencyMgmt.gradle
@@ -407,44 +450,44 @@ Archivo: `cve_resolver_report.json` en el proyecto
 - Acción: Continúa con CVEs válidos
 - Detalle: Lista de omisiones con razón
 
-## 11. Dependencias
+## 12. Dependencias
 
-### 11.1 Requisitos del Sistema
+### 12.1 Requisitos del Sistema
 - Python 3.8+
 - Gradle (o wrapper gradlew) en el proyecto
 - Java 17+ (para validación por compilación)
 
-### 11.2 Requisitos de Python
+### 12.2 Requisitos de Python
 - Sin librerías externas (solo stdlib)
 - Usa: `json`, `re`, `os`, `sys`, `argparse`, `shutil`, `subprocess`, `pathlib`, `typing`, `dataclasses`, `datetime`
 
-### 11.3 Archivos Requeridos
+### 12.3 Archivos Requeridos
 - `cve_resolver_agent.py`
 - Archivo CVE JSON (por defecto: `snyk_cves_for_agent.json`)
 
-## 12. Limitaciones
+## 13. Limitaciones
 
-### 12.1 Alcance
+### 13.1 Alcance
 - Solo proyectos Gradle con estructura build.gradle + dependencyMgmt.gradle
 - No soporta Maven
 - No soporta Gradle Kotlin DSL (.gradle.kts)
 - Solo grupos definidos en VERSION_MAP
 
-### 12.2 Variables
+### 13.2 Variables
 - Solo gestiona variables definidas en VERSION_MAP
 - CVEs de grupos no mapeados son ignorados silenciosamente
 
-### 12.3 Resolución
+### 13.3 Resolución
 - No descarga versiones (usa repositorio local de Gradle)
 - No verifica disponibilidad en Maven Central antes de aplicar
 - Depende de compilación para validar que versiones existen
 
-### 12.4 Validación
+### 13.4 Validación
 - Compila solo `compileJava`, no ejecuta tests
 - Timeout de 5 minutos para compilación
 - Rollback automático solo si compilación falla
 
-## 13. Flujo de Estados
+## 14. Flujo de Estados
 
 ```
 Inicio

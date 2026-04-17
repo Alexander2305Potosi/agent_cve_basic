@@ -332,7 +332,7 @@ class GradleCVEUpdater:
         # 2. Actualizar dependencyMgmt.gradle (useVersion) - DESPUÉS de actualizar variables en build.gradle
         for version_var, group_cves in grouped_cves.items():
             primary_cve = group_cves[0]
-            self._update_dependency_mgmt(version_var, primary_cve)
+            self._update_dependency_mgmt(version_var, primary_cve, self.dry_run)
 
         # 3. Actualizar TODOS los build.gradle (incluyendo submódulos) - dependencias directas
         build_files = self._find_all_build_gradle_files()
@@ -406,6 +406,9 @@ class GradleCVEUpdater:
         Actualiza dependencias directas en build.gradle (incluyendo submódulos).
         Busca patrones como: implementation 'group:name:version' o implementation group: '...', name: '...', version: '...'
         También soporta formato especial: 'group_library:version' (usando _ como separador)
+
+        IMPORTANTE: Si la versión ya es una variable (ej: ${nettyVersion}), NO se reemplaza.
+        Solo se reemplazan versiones hardcodeadas (ej: 4.1.86.Final) con la variable correspondiente.
         """
         content = build_file.read_text(encoding='utf-8')
         original = content
@@ -413,6 +416,9 @@ class GradleCVEUpdater:
         file_rel = str(build_file.relative_to(self.project_path))
         updated = False
         old_version = None
+
+        # Obtener el nombre de la variable para este grupo
+        version_var = self._get_version_variable(cve.group)
 
         # Formato 1: Estándar 'group:name:version'
         # Ejemplo: implementation 'io.netty:netty-codec-http2:4.2.4.Final'
@@ -429,8 +435,16 @@ class GradleCVEUpdater:
         match1 = re.search(pattern1, content)
         if match1:
             old_version = match1.group(3)
+            # Si ya es una variable (comienza con $ o es referencia a variable), no hacer nada
+            if old_version.startswith('$') or old_version.startswith('${'):
+                return None
             if old_version != cve.fixed_version:
-                content = re.sub(pattern1, rf"\g<1>{cve.group}:{cve.library_name}:{cve.fixed_version}\g<3>", content)
+                # Si hay variable definida para este grupo, usarla; si no, usar versión hardcodeada
+                if version_var:
+                    new_version_str = f"${{{version_var}}}"
+                else:
+                    new_version_str = cve.fixed_version
+                content = re.sub(pattern1, rf"\g<1>{cve.group}:{cve.library_name}:{new_version_str}\g<3>", content)
                 updated = True
             else:
                 return None
@@ -440,9 +454,16 @@ class GradleCVEUpdater:
             match2 = re.search(pattern2, content)
             if match2:
                 old_version = match2.group(3)
+                # Si ya es una variable, no hacer nada
+                if old_version.startswith('$') or old_version.startswith('${'):
+                    return None
                 if old_version != cve.fixed_version:
                     # Normalizar a formato estándar group:name:version
-                    content = re.sub(pattern2, rf"\g<1>{cve.group}:{cve.library_name}:{cve.fixed_version}\g<3>", content)
+                    if version_var:
+                        new_version_str = f"${{{version_var}}}"
+                    else:
+                        new_version_str = cve.fixed_version
+                    content = re.sub(pattern2, rf"\g<1>{cve.group}:{cve.library_name}:{new_version_str}\g<3>", content)
                     updated = True
                 else:
                     return None
@@ -452,14 +473,21 @@ class GradleCVEUpdater:
             match3 = re.search(pattern3, content)
             if match3:
                 old_version = match3.group(5)
+                # Si ya es una variable, no hacer nada
+                if old_version.startswith('$') or old_version.startswith('${'):
+                    return None
                 if old_version != cve.fixed_version:
-                    content = re.sub(pattern3, rf"\g<1>{cve.group}\g<2>{cve.library_name}\g<3>{cve.fixed_version}\g<5>", content)
+                    if version_var:
+                        new_version_str = f"${{{version_var}}}"
+                    else:
+                        new_version_str = cve.fixed_version
+                    content = re.sub(pattern3, rf"\g<1>{cve.group}\g<2>{cve.library_name}\g<3>{new_version_str}\g<5>", content)
                     updated = True
                 else:
                     return None
 
         if updated and content != original:
-            print(f"   ✓ [{file_rel}] {cve.group}:{cve.library_name}: {old_version} → {cve.fixed_version}")
+            print(f"   ✓ [{file_rel}] {cve.group}:{cve.library_name}: {old_version} → {version_var or cve.fixed_version}")
             if not self.dry_run:
                 backup_path = self.backup_manager.create_backup(build_file)
                 print(f"   💾 Backup: {backup_path.name}")
@@ -470,7 +498,7 @@ class GradleCVEUpdater:
                 'action': 'UPDATED_DIRECT',
                 'library': f"{cve.group}:{cve.library_name}",
                 'cve': cve.cve_id,
-                'new_version': cve.fixed_version
+                'new_version': version_var or cve.fixed_version
             }
 
         return None
@@ -523,16 +551,18 @@ class GradleCVEUpdater:
         # Reemplazar caracteres que podrían romper el string de Gradle
         return text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
 
-    def _update_dependency_mgmt(self, version_var: str, cve: CVEEntry) -> None:
+    def _update_dependency_mgmt(self, version_var: str, cve: CVEEntry, dry_run: bool = False) -> None:
         """Agrega useVersion block en dependencyMgmt.gradle si no existe."""
         dm_file = self.project_path / "dependencyMgmt.gradle"
         if not dm_file.exists():
+            print(f"   ⚠️  dependencyMgmt.gradle no existe, saltando useVersion para {cve.group}")
             return
 
         content = dm_file.read_text(encoding='utf-8')
 
         # Verificar si ya existe useVersion para este grupo
         if f"details.requested.group == '{cve.group}'" in content:
+            print(f"   ⏭️  useVersion ya existe para {cve.group}, omitiendo")
             return
 
         # Insertar bloque useVersion antes del cierre de resolutionStrategy
@@ -559,12 +589,17 @@ class GradleCVEUpdater:
             new_content = match.group(1) + use_block + match.group(2)
             content = content.replace(match.group(0), new_content)
 
-            if not self.dry_run:
+            if not dry_run:
                 backup_path = self.backup_manager.create_backup(dm_file)
                 print(f"   💾 Backup: {backup_path.name}")
                 dm_file.write_text(content, encoding='utf-8')
 
-            print(f"   ✓ Added useVersion for {cve.group}")
+            print(f"   ✓ Added useVersion for {cve.group} using ${{{version_var}}}")
+        else:
+            if not match:
+                print(f"   ⚠️  No se encontró bloque resolutionStrategy en dependencyMgmt.gradle")
+            if not version_var:
+                print(f"   ⚠️  No hay variable de versión definida para {cve.group}")
 
 
 class GradleCompiler:
