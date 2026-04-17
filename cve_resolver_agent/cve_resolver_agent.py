@@ -28,6 +28,9 @@ Uso:
     python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --parallel
     python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --parallel --max-workers 10
 
+    # Modo debug (muestra información detallada)
+    python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --debug
+
 Changelog v1.0.0:
 - Validación por compilación automática (--apply)
 - Flag --no-validate para saltar compilación
@@ -38,7 +41,7 @@ Changelog v1.0.0:
 - Normalización de severidad a mayúsculas
 - Advertencias para versiones SNAPSHOT/Milestone/RC
 - Escapado de caracteres especiales en because
-- Auto-detección de Java en macOS
+- Auto-detección de Java en macOS y Windows
 - Soporte para múltiples build.gradle (submódulos)
 - Actualización de dependencias directas en todos los submódulos
 - Soporte para monorepo (múltiples microservicios)
@@ -50,6 +53,8 @@ Changelog v1.0.0:
 - Mensaje de commit descriptivo con microservicios modificados y CVEs resueltos
 - Tiempo de ejecución al final del log
 - Procesamiento paralelo: Nuevo argumento --parallel para procesar CVEs en paralelo
+- Modo debug: Nuevo argumento --debug para diagnóstico detallado
+- Soporte Windows: Manejo de rutas con espacios, gradlew.bat, rutas Java comunes
 """
 
 import json
@@ -524,7 +529,7 @@ class GradleCompiler:
     """Compila el proyecto Gradle para validar cambios."""
 
     # Ubicaciones comunes de Java en macOS
-    COMMON_JAVA_PATHS = [
+    COMMON_JAVA_PATHS_MACOS = [
         "/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home",
         "/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home",
         "/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home",
@@ -537,20 +542,56 @@ class GradleCompiler:
         "/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home",
     ]
 
-    def __init__(self, project_path: Path):
+    # Ubicaciones comunes de Java en Windows
+    COMMON_JAVA_PATHS_WINDOWS = [
+        r"C:\Program Files\Java\jdk-21",
+        r"C:\Program Files\Java\jdk-17",
+        r"C:\Program Files\Java\jdk-11",
+        r"C:\Program Files\Microsoft\openjdk\jdk-21.0.6.7-hotspot",
+        r"C:\Program Files\Microsoft\openjdk\jdk-17.0.14.7-hotspot",
+        r"C:\Program Files\Eclipse Adoptium\jdk-21.0.6.7-hotspot",
+        r"C:\Program Files\Eclipse Adoptium\jdk-17.0.14.7-hotspot",
+        r"C:\Program Files\Amazon Corretto\jdk-21.0.6",
+        r"C:\Program Files\Amazon Corretto\jdk-17.0.14",
+    ]
+
+    def __init__(self, project_path: Path, debug: bool = False):
         self.project_path = project_path
+        self.debug = debug
 
     def _find_java_home(self) -> Optional[str]:
         """Busca Java en ubicaciones comunes si JAVA_HOME no está definido."""
+        import platform
+
         # Primero verificar JAVA_HOME existente
         java_home = os.environ.get("JAVA_HOME")
-        if java_home and Path(java_home).exists():
-            return java_home
+        if java_home:
+            # Expandir variables de entorno en Windows (como %ProgramFiles%)
+            if platform.system() == "Windows":
+                java_home = os.path.expandvars(java_home)
+            if Path(java_home).exists():
+                if self.debug:
+                    print(f"   🔍 [DEBUG] JAVA_HOME encontrado: {java_home}")
+                return java_home
+            elif self.debug:
+                print(f"   🔍 [DEBUG] JAVA_HOME definido pero no existe: {java_home}")
+
+        # Determinar rutas según sistema operativo
+        if platform.system() == "Windows":
+            paths_to_check = self.COMMON_JAVA_PATHS_WINDOWS
+        else:
+            paths_to_check = self.COMMON_JAVA_PATHS_MACOS
 
         # Buscar en ubicaciones comunes
-        for path in self.COMMON_JAVA_PATHS:
-            if Path(path).exists():
-                return path
+        for path in paths_to_check:
+            # Expandir variables de entorno
+            expanded_path = os.path.expandvars(path)
+            if Path(expanded_path).exists():
+                if self.debug:
+                    print(f"   🔍 [DEBUG] Java encontrado en: {expanded_path}")
+                return expanded_path
+            elif self.debug:
+                print(f"   🔍 [DEBUG] No existe: {expanded_path}")
 
         return None
 
@@ -561,6 +602,8 @@ class GradleCompiler:
         Returns:
             Tuple[bool, str]: (éxito, mensaje)
         """
+        import platform
+
         print("\n🔨 Compilando proyecto para validar cambios...")
 
         # Preparar entorno con Java
@@ -573,12 +616,29 @@ class GradleCompiler:
         else:
             print("   ⚠️  No se encontró JAVA_HOME. Intentando usar Java del sistema...")
 
-        # Determinar comando de Gradle
+        # Determinar comando de Gradle según el sistema operativo
+        is_windows = platform.system() == "Windows"
         gradlew = self.project_path / "gradlew"
-        gradle_cmd = ["./gradlew"] if gradlew.exists() else ["gradle"]
+        gradlew_bat = self.project_path / "gradlew.bat"
+
+        if gradlew_bat.exists() and is_windows:
+            # Windows: usar gradlew.bat
+            gradle_cmd = [str(gradlew_bat)]
+        elif gradlew.exists():
+            # Unix-like (Linux, macOS): usar ./gradlew
+            gradle_cmd = ["./gradlew"]
+        else:
+            # Fallback a gradle del sistema
+            gradle_cmd = ["gradle"]
 
         # Comando para compilar sin tests (más rápido)
         cmd = gradle_cmd + ["compileJava", "--no-daemon", "-q"]
+
+        if self.debug:
+            print(f"   🔍 [DEBUG] Sistema operativo: {platform.system()}")
+            print(f"   🔍 [DEBUG] Directorio de trabajo: {self.project_path}")
+            print(f"   🔍 [DEBUG] JAVA_HOME en env: {env.get('JAVA_HOME', 'No definido')}")
+            print(f"   🔍 [DEBUG] Comando: {' '.join(cmd)}")
 
         try:
             result = subprocess.run(
@@ -587,33 +647,47 @@ class GradleCompiler:
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minutos timeout
-                env=env
+                env=env,
+                shell=is_windows if gradle_cmd[0].endswith('.bat') else False
             )
+
+            if self.debug:
+                print(f"   🔍 [DEBUG] Return code: {result.returncode}")
+                if result.stdout:
+                    print(f"   🔍 [DEBUG] STDOUT:\n{result.stdout}")
+                if result.stderr:
+                    print(f"   🔍 [DEBUG] STDERR:\n{result.stderr}")
 
             if result.returncode == 0:
                 return True, "✅ Compilación exitosa"
             else:
-                error_msg = result.stderr if result.stderr else "Error desconocido"
-                return False, f"❌ Fallo de compilación: {error_msg}"
+                error_msg = result.stderr if result.stderr else result.stdout or "Error desconocido"
+                return False, f"❌ Fallo de compilación:\n{error_msg}"
 
         except subprocess.TimeoutExpired:
             return False, "❌ Timeout: La compilación tomó más de 5 minutos"
-        except FileNotFoundError:
-            return False, "❌ Gradle no encontrado. Instala Gradle o usa el wrapper (gradlew)"
+        except FileNotFoundError as e:
+            if self.debug:
+                print(f"   🔍 [DEBUG] FileNotFoundError: {e}")
+            return False, f"❌ Gradle no encontrado: {e}. Instala Gradle o usa el wrapper (gradlew)"
         except Exception as e:
+            if self.debug:
+                import traceback
+                traceback.print_exc()
             return False, f"❌ Error durante compilación: {str(e)}"
 
 
 class CVEResolverAgent:
     """Agente principal para resolver CVEs en proyectos Gradle."""
 
-    def __init__(self, project_path: Path, cve_file_path: Path, dry_run: bool = True, validate: bool = True):
+    def __init__(self, project_path: Path, cve_file_path: Path, dry_run: bool = True, validate: bool = True, debug: bool = False):
         self.project_path = project_path
         self.dry_run = dry_run
         self.validate = validate
+        self.debug = debug
         self.cve_processor = SnykCVEProcessor(cve_file_path)
         self.gradle_updater = GradleCVEUpdater(project_path, dry_run)
-        self.compiler = GradleCompiler(project_path)
+        self.compiler = GradleCompiler(project_path, debug)
 
     def run(self) -> Dict:
         """Ejecuta el flujo completo de resolución de CVEs."""
@@ -982,7 +1056,8 @@ def process_single_cve_for_microservice(
     cve: CVEEntry,
     cve_file: Path,
     dry_run: bool,
-    validate: bool
+    validate: bool,
+    debug: bool = False
 ) -> Dict:
     """
     Procesa un solo CVE para un microservicio específico.
@@ -994,6 +1069,7 @@ def process_single_cve_for_microservice(
         cve_file: Ruta al archivo de CVEs (para el agente)
         dry_run: Modo simulación
         validate: Validar compilación
+        debug: Modo debug para diagnóstico
 
     Returns:
         Dict con resultados del procesamiento
@@ -1010,7 +1086,7 @@ def process_single_cve_for_microservice(
 
     try:
         # Crear agente y procesar SOLO este CVE
-        agent = CVEResolverAgent(project_path, cve_file, dry_run=dry_run, validate=validate)
+        agent = CVEResolverAgent(project_path, cve_file, dry_run=dry_run, validate=validate, debug=debug)
 
         # Procesar solo este CVE específico
         updater = agent.gradle_updater
@@ -1019,7 +1095,7 @@ def process_single_cve_for_microservice(
 
         # Si hay actualizaciones, intentar compilar
         if not dry_run and update_results['updated'] and validate:
-            compiler = GradleCompiler(project_path)
+            compiler = GradleCompiler(project_path, debug=debug)
             success, msg = compiler.compile()
             result['compilation_success'] = success
 
@@ -1102,6 +1178,8 @@ Ejemplos:
                        help="Procesar CVEs en paralelo para múltiples microservicios (monorepo)")
     parser.add_argument("--max-workers", type=int, default=5,
                        help="Número máximo de workers para procesamiento paralelo (default: 5)")
+    parser.add_argument("--debug", "-d", action="store_true",
+                       help="Modo debug: Muestra información detallada de diagnóstico")
 
     args = parser.parse_args()
 
@@ -1197,7 +1275,8 @@ Ejemplos:
                         cve,
                         cve_file,
                         not args.apply,  # dry_run
-                        validate
+                        validate,
+                        args.debug
                     ): ms_path for ms_path in valid_microservices
                 }
 
@@ -1283,7 +1362,7 @@ Ejemplos:
                 continue
 
             try:
-                agent = CVEResolverAgent(project_path, cve_file, dry_run=not args.apply, validate=validate)
+                agent = CVEResolverAgent(project_path, cve_file, dry_run=not args.apply, validate=validate, debug=args.debug)
                 results = agent.run()
                 all_results[project_path.name] = results
 

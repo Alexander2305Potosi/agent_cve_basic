@@ -204,6 +204,27 @@ python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --parallel --max-
 python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --parallel --commit
 ```
 
+### Modo 6: Modo Debug (`--debug`)
+Muestra información detallada de diagnóstico, útil para solucionar problemas de compilación o configuración.
+
+```bash
+# Mostrar información de diagnóstico
+python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --debug
+
+# Debug con compilación
+python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --debug --no-validate
+
+# Debug en Windows (diagnóstico de Java)
+python cve_resolver_agent.py --folder "C:\proyectos\backend" --apply --debug
+```
+
+**Información mostrada en modo debug:**
+- Sistema operativo detectado
+- Ruta de Java encontrada
+- Comando exacto que se ejecuta
+- Variables de entorno
+- Resultado detallado de la compilación
+
 **Cómo funciona:**
 - Cada CVE se aplica simultáneamente a todos los microservicios
 - Si tienes 3 CVEs y 5 microservicios:
@@ -631,7 +652,7 @@ Y continuará con el procesamiento normal.
 - **Validación de CVEs**: Rechaza CVEs sin ID o con versiones inválidas, normaliza severidad a mayúsculas
 - **Advertencias**: Detecta versiones SNAPSHOT/Milestone/RC
 - **Escapado de caracteres**: Maneja caracteres especiales en descripciones de CVE
-- **Auto-detección de Java**: Encuentra Java instalado en macOS automáticamente
+- **Auto-detección de Java**: Encuentra Java instalado automáticamente (soporta macOS y Windows)
 - **Soporte para submódulos**: Actualiza múltiples build.gradle (incluye submódulos anidados)
 - **Soporte para monorepo**: Procesa múltiples microservicios con `--ms` o `--folder`
 - **Auto-detección de MS**: Detecta automáticamente carpetas `ms_*` en modo monorepo
@@ -642,6 +663,8 @@ Y continuará con el procesamiento normal.
 - **Tiempo de ejecución**: Muestra tiempo total al final del log
 - **Procesamiento paralelo**: Argumento `--parallel` para procesar CVEs simultáneamente en múltiples microservicios
 - **Configurable**: `--max-workers` para controlar el número de hilos (default: 5)
+- **Modo Debug**: Argumento `--debug` para mostrar información detallada de diagnóstico
+- **Soporte Windows**: Manejo correcto de rutas con espacios, soporte para `gradlew.bat`, detección automática de Java en ubicaciones comunes de Windows
 
 ## Solución de Problemas
 
@@ -712,6 +735,46 @@ Y continuará con el procesamiento normal.
   ]
 }
 ```
+
+### Compilación fallida en Windows (Java no encontrado)
+
+**Problema:** La compilación falla con "El sistema no puede encontrar la ruta especificada" o errores relacionados con Java cuando está instalado en `C:\Program Files\Microsoft\openjdk`
+
+**Causas:**
+- Rutas con espacios no manejadas correctamente
+- JAVA_HOME no está definido o no se encuentra
+- En Windows se necesita usar `gradlew.bat` en lugar de `./gradlew`
+
+**Soluciones:**
+
+1. **Usar el modo debug para diagnosticar:**
+   ```cmd
+   python cve_resolver_agent.py --folder "C:\proyectos\backend" --apply --debug
+   ```
+   Esto mostrará:
+   - Sistema operativo detectado
+   - Rutas de Java encontradas
+   - Comando exacto que se ejecuta
+   - Variables de entorno
+
+2. **Definir JAVA_HOME explícitamente:**
+   ```cmd
+   set JAVA_HOME=C:\Program Files\Microsoft\openjdk\jdk-21.0.6.7-hotspot
+   python cve_resolver_agent.py --folder "C:\proyectos\backend" --apply
+   ```
+
+3. **Usar el script helper para Windows:**
+   ```cmd
+   run_agent.bat "C:\proyectos\backend"
+   ```
+
+**Rutas de Java soportadas automáticamente en Windows:**
+- `C:\Program Files\Java\jdk-21`
+- `C:\Program Files\Java\jdk-17`
+- `C:\Program Files\Microsoft\openjdk\jdk-21.0.6.7-hotspot`
+- `C:\Program Files\Microsoft\openjdk\jdk-17.0.14.7-hotspot`
+- `C:\Program Files\Eclipse Adoptium\jdk-*`
+- `C:\Program Files\Amazon Corretto\jdk-*`
 
 ## Licencia
 
