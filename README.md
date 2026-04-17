@@ -9,7 +9,7 @@ Este es un monorepo que contiene el CVE Resolver Agent y el backend de documento
 ├── .gitignore                      # Configuración de archivos ignorados
 ├── README.md                       # Este archivo
 ├── cve_resolver_agent/             # Agente CVE para resolver vulnerabilidades
-│   ├── cve_resolver_agent.py      # Agente principal (v1.5.1)
+│   ├── cve_resolver_agent.py      # Agente principal (v1.0.0)
 │   ├── test_cve_resolver_agent.py # Tests unitarios
 │   ├── README.md                   # Documentación del agente
 │   ├── RULES.md                   # Reglas de negocio
@@ -117,7 +117,7 @@ python3 test_cve_resolver_agent.py
 
 ## Versión Actual
 
-**CVE Resolver Agent:** v1.5.1
+**CVE Resolver Agent:** v1.0.0
 - Soporte monorepo
 - Integración Git
 - Tiempo de ejeción

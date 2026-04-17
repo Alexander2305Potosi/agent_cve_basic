@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests unitarios para CVE Resolver Agent v1.4.0
+Tests unitarios para CVE Resolver Agent v1.0.0
 
 Ejecución:
     python3 -m pytest test_cve_resolver_agent.py -v
@@ -603,7 +603,7 @@ class TestGitCommitManager(unittest.TestCase):
 def run_basic_tests():
     """Ejecuta tests básicos sin necesidad de pytest"""
     print("=" * 60)
-    print("CVE Resolver Agent - Tests Unitarios v1.5.0")
+    print("CVE Resolver Agent - Tests Unitarios v1.0.0")
     print("=" * 60)
 
     loader = unittest.TestLoader()
