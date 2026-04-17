@@ -1222,6 +1222,7 @@ grep "nettyVersion" build.gradle
 ### Cambios v1.0.0 (Correcciones)
 - Variables en subcarpetas: Las dependencias en submódulos ahora usan variables (${nettyVersion}) en lugar de versiones hardcodeadas
 - dependencyMgmt.gradle: Ahora agrega correctamente bloques useVersion cuando se crean variables nuevas
+- dependencyMgmt.gradle: Actualiza automáticamente `configurations.all` a `configurations.configureEach` (mejor práctica Gradle moderno)
 - Manejo de señales: Ctrl+C termina el proceso limpiamente sin dejar la consola congelada
 - Debug de rollback: Mensajes adicionales para diagnosticar problemas con backups durante rollback
 - Soporte Java 17/21+: Configura automáticamente `--enable-native-access=ALL-UNNAMED` para evitar errores de acceso nativo
@@ -1317,7 +1318,7 @@ buildscript {
 
 ```gradle
 // dependencyMgmt.gradle
-configurations.all {
+configurations.configureEach {
     resolutionStrategy.eachDependency { DependencyResolveDetails details ->
         // NO tiene bloque para org.apache.commons
     }

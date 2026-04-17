@@ -4,7 +4,7 @@ CVE Resolver Agent v1.0.0 - Para Spring WebFlux + Gradle
 
 Arquitectura:
 - Variables de versión: SOLO en build.gradle (bloque buildscript.ext)
-- useVersion blocks: SOLO en dependencyMgmt.gradle (configurations.all.resolutionStrategy)
+- useVersion blocks: SOLO en dependencyMgmt.gradle (configurations.configureEach.resolutionStrategy)
 - Actualización de dependencias directas: TODOS los build.gradle (incluye submódulos)
 - Una variable por grupo de librerías (consolidado)
 - Validación automática por compilación
@@ -560,6 +560,17 @@ class GradleCVEUpdater:
             return
 
         content = dm_file.read_text(encoding='utf-8')
+        original_content = content
+
+        # Actualizar configurations.all a configurations.configureEach si es necesario
+        if 'configurations.all' in content:
+            if not dry_run:
+                backup_path = self.backup_manager.create_backup(dm_file)
+                print(f"   💾 Backup: {backup_path.name}")
+            content = content.replace('configurations.all', 'configurations.configureEach')
+            print(f"   ✓ Actualizado configurations.all → configurations.configureEach")
+            if not dry_run:
+                dm_file.write_text(content, encoding='utf-8')
 
         # Verificar si ya existe useVersion para este grupo
         if f"details.requested.group == '{cve.group}'" in content:
@@ -567,8 +578,38 @@ class GradleCVEUpdater:
             return
 
         # Insertar bloque useVersion antes del cierre de resolutionStrategy
-        pattern = r"(resolutionStrategy\.eachDependency\s*\{[\s\S]*?)(\n    \}\s*\})"
-        match = re.search(pattern, content)
+        # Buscar el bloque resolutionStrategy.eachDependency y encontrar su cierre
+        # El bloque termina con "}\s*}" (cierre de eachDependency + cierre de configurations.all)
+        # o simplemente buscamos insertar antes del último "}" que cierra el bloque
+        rs_match = re.search(r'resolutionStrategy\.eachDependency\s*\{', content)
+        if rs_match:
+            # Encontrar el cierre del bloque eachDependency
+            # Contar llaves de apertura y cierre para encontrar el final correcto
+            start_pos = rs_match.end()
+            brace_count = 1
+            pos = start_pos
+            while pos < len(content) and brace_count > 0:
+                if content[pos] == '{':
+                    brace_count += 1
+                elif content[pos] == '}':
+                    brace_count -= 1
+                pos += 1
+
+            # El cierre del eachDependency está en pos-1
+            # Ahora buscar el cierre del configurations.all
+            each_dep_end = pos - 1
+            remaining = content[each_dep_end:]
+            config_close_match = re.search(r'^\s*\}', remaining)
+
+            if config_close_match:
+                config_close_start = each_dep_end + config_close_match.start()
+                match = type('Match', (), {
+                    'group': lambda self, n: [None, content[:each_dep_end], content[each_dep_end:config_close_start] + config_close_match.group()][n]
+                })()
+            else:
+                match = None
+        else:
+            match = None
 
         if match and version_var:
             # Escapar el CVE ID para el because

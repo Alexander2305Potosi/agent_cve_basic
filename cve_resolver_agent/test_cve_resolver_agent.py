@@ -422,13 +422,13 @@ buildscript {
     }
 }
 
-configurations.all {
+configurations.configureEach {
     resolutionStrategy.eachDependency { details ->
         // existing
     }
 }
 """)
-            (ms_dir / "dependencyMgmt.gradle").write_text("""configurations.all {
+            (ms_dir / "dependencyMgmt.gradle").write_text("""configurations.configureEach {
     resolutionStrategy.eachDependency { details ->
     }
 }

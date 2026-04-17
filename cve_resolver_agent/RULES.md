@@ -38,7 +38,7 @@ ms_upload_documents/
 ### 1.4 dependencyMgmt.gradle
 - **Propósito**: Forzar versiones mediante `resolutionStrategy`
 - **Ubicación**: Raíz del microservicio (importado por build.gradle)
-- **Bloque**: `configurations.all { resolutionStrategy.eachDependency { ... } }`
+- **Bloque**: `configurations.configureEach { resolutionStrategy.eachDependency { ... } }`
 - **Contenido**: Solo bloques `useVersion`, sin declaración de variables
 - **Nota**: Algunos grupos requieren verificación adicional de artifact
 

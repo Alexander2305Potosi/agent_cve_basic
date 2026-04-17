@@ -23,18 +23,23 @@ Soporta **monorepositorios** - procesa múltiples microservicios en una sola eje
 - **Integración Git: Crea commits automáticos con `--commit`**
 - **Ramas automáticas: Crea rama `feature/fix_vulnerabilidad_{fecha}_{usuario}`**
 - **Mensajes descriptivos: Incluye CVEs resueltos y MS modificados en el commit**
+- **Variables en submódulos: Las dependencias directas en subcarpetas usan `${variable}`**
+- **Soporte Java 17/21: Configura automáticamente `--enable-native-access`**
+- **Manejo de interrupciones: Ctrl+C termina el proceso limpiamente**
+- **Modo debug: Diagnóstico detallado con `--debug`**
 
 ## Arquitectura
 
-El agente trabaja con dos archivos Gradle:
+El agente trabaja con tres archivos Gradle:
 
-1. **build.gradle**: Contiene las variables de versión en el bloque `buildscript.ext`
-2. **dependencyMgmt.gradle**: Contiene los bloques `useVersion` para forzar versiones seguras
+1. **build.gradle**: Contiene las variables de versión en el bloque `buildscript.ext` (entry point)
+2. **main.gradle**: Configuración adicional (tests, jacoco) - aplica `dependencyMgmt.gradle` dentro de `allprojects`
+3. **dependencyMgmt.gradle**: Contiene los bloques `useVersion` para forzar versiones seguras
 
 ### Ejemplo de flujo
 
 ```gradle
-// build.gradle
+// build.gradle - Entry point con variables de versión
 buildscript {
     ext {
         nettyVersion = '4.1.132.Final'
@@ -42,9 +47,21 @@ buildscript {
         springFrameworkVersion = '6.1.14'
     }
 }
+apply from: 'dependencyMgmt.gradle'
+// ... configuración de dependencias ...
+apply from: 'main.gradle'
 
-// dependencyMgmt.gradle
-configurations.all {
+// main.gradle - Configuración de tests y plugins
+allprojects {
+    // Las variables vienen de build.gradle
+    apply from: "${rootDir}/dependencyMgmt.gradle"
+}
+apply plugin: 'java'
+apply plugin: 'org.springframework.boot'
+// ... configuración de tests, jacoco ...
+
+// dependencyMgmt.gradle - Resolución de dependencias
+configurations.configureEach {
     resolutionStrategy.eachDependency { details ->
         if (details.requested.group == 'io.netty') {
             details.useVersion "${nettyVersion}"
@@ -53,6 +70,13 @@ configurations.all {
     }
 }
 ```
+
+### Flujo de Modificación del Agente
+
+1. **build.gradle (raíz)**: Agrega/actualiza variables en `buildscript.ext`
+2. **dependencyMgmt.gradle**: Agrega bloques `useVersion` si no existen
+3. **build.gradle (submódulos)**: Reemplaza versiones hardcodeadas con `${variable}`
+4. **main.gradle**: **NO se modifica** - solo contiene configuración de build
 
 ## Estructura del Proyecto
 
@@ -112,7 +136,11 @@ python3 cve_resolver_agent.py --folder ../supplier_documents_backend --apply --p
 
 - Python 3.8 o superior
 - Gradle (o wrapper gradlew) en el proyecto
+- Java 17+ o Java 21+ (para validación por compilación)
 - Sin dependencias externas de Python (solo stdlib)
+
+### Nota sobre Java 17/21+
+El agente configura automáticamente `GRADLE_OPTS="--enable-native-access=ALL-UNNAMED"` para evitar errores de acceso nativo restringido en versiones recientes de Java.
 
 ## Instalación
 
@@ -665,6 +693,7 @@ Y continuará con el procesamiento normal.
 - **Configurable**: `--max-workers` para controlar el número de hilos (default: 5)
 - **Modo Debug**: Argumento `--debug` para mostrar información detallada de diagnóstico
 - **Soporte Windows**: Manejo correcto de rutas con espacios, soporte para `gradlew.bat`, detección automática de Java en ubicaciones comunes de Windows
+- **Gradle Moderno**: Actualiza automáticamente `configurations.all` a `configurations.configureEach` en dependencyMgmt.gradle
 
 ## Solución de Problemas
 
