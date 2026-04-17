@@ -188,6 +188,21 @@ O si no existe gradlew:
 gradle compileJava --no-daemon -q
 ```
 
+### 7.1.1 Configuración de JVM para Java 17/21+
+Para evitar errores de `ExceptionInInitializerError` y warnings de acceso nativo restringido en Java 17+ y Java 21+, el agente configura automáticamente:
+```bash
+GRADLE_OPTS="--enable-native-access=ALL-UNNAMED"
+```
+
+Esto permite que Gradle acceda a métodos nativos sin warnings ni errores.
+
+**Soportado**:
+- Java 17 (LTS)
+- Java 21 (LTS)
+- Versiones superiores
+
+**Nota**: Si defines tu propio `GRADLE_OPTS`, el agente lo respeta y solo agrega el flag si no está presente.
+
 ### 7.2 Timeout
 - La compilación tiene un timeout de 5 minutos
 - Si excede el tiempo, se reporta como fallo

@@ -273,12 +273,17 @@ nettyVersion = '4.1.132.Final'
 **Resultado Esperado**:
 ```
    ✓ nettyVersion: ADDED → 9.9.999.Final
-   💾 Backup creado
-   🔨 Compilando...
+   💾 Backup creado: build.gradle.YYYYMMDD_HHMMSS.backup
+      Total backups en sesión: 1
+   ✓ Added useVersion for io.netty using ${nettyVersion}
+   🔨 Compilando proyecto para validar cambios...
    ❌ Fallo de compilación: Could not find io.netty:9.9.999.Final
 
 ⚠️  La compilación falló. Iniciando rollback automático...
+   🔍 Backups disponibles: 1
+      - build.gradle.YYYYMMDD_HHMMSS.backup -> build.gradle
    ↩️  Rollback exitoso. Archivos restaurados: build.gradle
+   ✅ Archivos restaurados a su estado original
 ```
 
 **Reporte JSON**:
@@ -287,6 +292,34 @@ nettyVersion = '4.1.132.Final'
   "compilation_success": false,
   "rollback_performed": true
 }
+```
+
+**Notas de Implementación**:
+- El rollback usa los backups creados durante la sesión
+- Si no hay backups, el rollback reporta "No hay backups para restaurar"
+- Los backups se registran en `BackupManager.created_backups` durante la ejecución
+
+**Estado**: ✅ PASSED
+
+---
+
+### Escenario 11b: Debug de Rollback
+
+**Objetivo**: Verificar que los backups se registran correctamente antes del rollback
+
+**Comando**: Ejecutar con versión inválida y verificar output de debug
+
+**Resultado Esperado**:
+```
+💾 Backup creado: build.gradle.20240115_143022.backup
+   Total backups en sesión: 1
+💾 Backup creado: dependencyMgmt.gradle.20240115_143022.backup
+   Total backups en sesión: 2
+...
+⚠️  La compilación falló. Iniciando rollback automático...
+   🔍 Backups disponibles: 2
+      - build.gradle.20240115_143022.backup -> build.gradle
+      - dependencyMgmt.gradle.20240115_143022.backup -> dependencyMgmt.gradle
 ```
 
 **Estado**: ✅ PASSED
@@ -303,6 +336,39 @@ nettyVersion = '4.1.132.Final'
 ```
    ❌ Gradle no encontrado. Instala Gradle o usa el wrapper (gradlew)
 ```
+
+**Estado**: ✅ PASSED
+
+---
+
+### Escenario 12b: Compilación con Java 17/21+ (Native Access)
+
+**Objetivo**: Verificar que la compilación funciona correctamente con Java 17/21+ evitando errores de acceso nativo
+
+**Pre-condición**:
+- Java 17 (LTS) o Java 21 (LTS) instalado
+- Proyecto Gradle con wrapper
+
+**Error típico sin fix**:
+```
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by ...
+Execution failed for task ':model:compileJava'.
+> java.lang.ExceptionInInitializerError
+```
+
+**Comando**: `python3 cve_resolver_agent.py /ruta/proyecto --apply --debug`
+
+**Resultado Esperado**:
+```
+   📝 Usando Java: /Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
+   🔍 [DEBUG] GRADLE_OPTS configurado: --enable-native-access=ALL-UNNAMED
+   🔨 Compilando proyecto para validar cambios...
+   🔍 [DEBUG] Comando: ./gradlew compileJava --no-daemon -q
+   ✅ Compilación exitosa
+```
+
+**Nota**: El agente configura automáticamente `GRADLE_OPTS` para evitar errores de acceso nativo restringido en Java 17+.
 
 **Estado**: ✅ PASSED
 
@@ -1049,7 +1115,9 @@ Speedup: ~5x más rápido
 
 ### Validación y Errores
 - [x] Escenario 11: Compilación fallida con rollback automático
+- [x] Escenario 11b: Debug de rollback - backups registrados correctamente
 - [x] Escenario 12: Gradle no encontrado manejado correctamente
+- [x] Escenario 12b: Compilación con Java 17+ (native access fix)
 - [x] Escenario 24: Error parcial no detiene procesamiento
 
 ### Validación de CVEs (v1.0.0)
@@ -1072,6 +1140,7 @@ Speedup: ~5x más rápido
 - [x] Timeout de 5 minutos
 - [x] Mensaje claro de éxito/fallo
 - [x] Rollback automático en fallo
+- [x] Escenario 11b: Debug de rollback con conteo de backups
 
 ### Integración Git (v1.0.0)
 - [x] Escenario 26: Detección de repositorio Git
@@ -1154,6 +1223,8 @@ grep "nettyVersion" build.gradle
 - Variables en subcarpetas: Las dependencias en submódulos ahora usan variables (${nettyVersion}) en lugar de versiones hardcodeadas
 - dependencyMgmt.gradle: Ahora agrega correctamente bloques useVersion cuando se crean variables nuevas
 - Manejo de señales: Ctrl+C termina el proceso limpiamente sin dejar la consola congelada
+- Debug de rollback: Mensajes adicionales para diagnosticar problemas con backups durante rollback
+- Soporte Java 17/21+: Configura automáticamente `--enable-native-access=ALL-UNNAMED` para evitar errores de acceso nativo
 
 ---
 

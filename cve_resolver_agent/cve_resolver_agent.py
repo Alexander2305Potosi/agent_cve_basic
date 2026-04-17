@@ -388,7 +388,8 @@ class GradleCVEUpdater:
         if content != original:
             if not self.dry_run:
                 backup_path = self.backup_manager.create_backup(build_file)
-                print(f"   💾 Backup: {backup_path.name}")
+                print(f"   💾 Backup creado: {backup_path.name}")
+                print(f"      Total backups en sesión: {len(self.backup_manager.created_backups)}")
                 build_file.write_text(content, encoding='utf-8')
 
             return {
@@ -693,6 +694,17 @@ class GradleCompiler:
         else:
             print("   ⚠️  No se encontró JAVA_HOME. Intentando usar Java del sistema...")
 
+        # Configurar GRADLE_OPTS para evitar warnings de native access en Java 17+
+        # y permitir acceso a métodos restringidos
+        gradle_opts = env.get("GRADLE_OPTS", "")
+        if "--enable-native-access" not in gradle_opts:
+            if gradle_opts:
+                gradle_opts += " "
+            gradle_opts += "--enable-native-access=ALL-UNNAMED"
+            env["GRADLE_OPTS"] = gradle_opts
+            if self.debug:
+                print(f"   🔍 [DEBUG] GRADLE_OPTS configurado: {gradle_opts}")
+
         # Determinar comando de Gradle según el sistema operativo
         is_windows = platform.system() == "Windows"
         gradlew = self.project_path / "gradlew"
@@ -818,6 +830,13 @@ class CVEResolverAgent:
 
             if not success:
                 print("\n⚠️  La compilación falló. Iniciando rollback automático...")
+
+                # Debug: Verificar cuántos backups tenemos
+                num_backups = len(self.gradle_updater.backup_manager.created_backups)
+                print(f"   🔍 Backups disponibles: {num_backups}")
+                for backup_path, original_path in self.gradle_updater.backup_manager.created_backups:
+                    print(f"      - {backup_path.name} -> {original_path.name}")
+
                 rollback_success, rollback_msg = self.gradle_updater.backup_manager.rollback()
 
                 if rollback_success:
