@@ -49,26 +49,83 @@ ms_upload_documents/
 **Formato Snyk:**
 | Campo | Validación | Acción si inválido |
 |-------|------------|-------------------|
-| `cve_id` | No vacío, formato CVE-XXXX-NNNNN | Omitir con advertencia |
-| `fixed_version` | No vacío | Omitir con advertencia |
+| `cve_id` | No vacío, formato CVE-XXXX-NNNNN+ | Omitir con advertencia |
+| `fixed_version` | No vacío, formato semántico válido | Omitir con advertencia |
 | `group` | Presente en VERSION_MAP | Ignorar silenciosamente |
 | `library_name` | Requerido para Apache Commons | Usar valor proporcionado |
 
 **Formato Array Directo:**
 | Campo | Validación | Acción si inválido |
 |-------|------------|-------------------|
-| `cve` | No vacío, formato CVE-XXXX-NNNNN | Omitir con advertencia |
-| `safe_version` | No vacío | Omitir con advertencia |
+| `cve` | No vacío, formato CVE-XXXX-NNNNN+ | Omitir con advertencia |
+| `safe_version` | No vacío, formato semántico válido | Omitir con advertencia |
 | `library` | Formato "group:name" | Extraer grupo y nombre |
 | `priority` | Mapeado a severity | Usar UNKNOWN si no existe |
 
-### 2.2 Versiones Problemáticas
+### 2.2 Validación de Formato CVE ID
+
+El agente valida que el CVE ID siga el patrón estándar **CVE-YYYY-NNNNN+**:
+
+```regex
+^CVE-\d{4}-\d{4,}$
+```
+
+**Ejemplos válidos:**
+- ✅ `CVE-2024-12345`
+- ✅ `CVE-2023-12345678`
+- ✅ `cve-2024-12345` (case-insensitive)
+
+**Ejemplos inválidos:**
+- ❌ `CVE-2024` (faltan números después del año)
+- ❌ `2024-12345` (falta prefijo CVE)
+- ❌ `CVE-2024-123` (menos de 4 dígitos)
+- ❌ `VULN-2024-12345` (prefijo incorrecto)
+
+**Acción:** Si el formato es inválido, el CVE se omite y se registra en el reporte de validación.
+
+### 2.3 Validación de Formato de Versión
+
+El agente valida que la versión fija tenga un formato semántico básico válido:
+
+```regex
+^(\d+)(\.(\d+))?(\.(\d+))?(\.[\w-]+)?$
+```
+
+**Formatos soportados:**
+- ✅ `1.0.0`
+- ✅ `4.1.132.Final`
+- ✅ `2.17.2`
+- ✅ `1.0` (versión parcial)
+- ✅ `1` (versión major sola)
+- ✅ `${variable}` (variables de Gradle)
+
+**Ejemplos inválidos:**
+- ❌ `"1.0.0"` (con comillas)
+- ❌ `version-1.0` (prefijo no numérico)
+- ❌ `1.0.0.0.0.0` (demasiados segmentos)
+
+**Acción:** Si el formato es inválido, el CVE se omite y se registra en el reporte de validación.
+
+### 2.4 Versiones Problemáticas
 | Patrón | Mensaje | Acción |
 |--------|---------|--------|
 | `.*-SNAPSHOT$` | SNAPSHOT versions are not allowed in production | Advertir, procesar |
 | `.*-M\d+$` | Milestone versions should be reviewed manually | Advertir, procesar |
 | `.*-RC\d+$` | Release Candidate versions should be reviewed manually | Advertir, procesar |
 | `^\s*$` | Empty version is not valid | Omitir |
+
+### 2.5 Reporte de Validación
+
+El agente mantiene un reporte de errores de validación accesible mediante:
+
+```python
+processor = SnykCVEProcessor(cve_file)
+cves = processor.load_cves()
+errors = processor.get_validation_report()
+# errors: [(cve_id, error_message), ...]
+```
+
+Este reporte se incluye en el output JSON final para auditoría.
 
 ### 2.3 Severidad
 - Entrada: Cualquier case (critical, Critical, CRITICAL)
@@ -138,6 +195,33 @@ details.because "Fix: CVE-2026-33871"
 
 ## 5. Comportamiento del Agente
 
+### 5.0 Aislamiento de Archivos (Regla Crítica)
+**PRINCIPIO FUNDAMENTAL**: El agente NUNCA modifica la estructura de carpetas del proyecto más allá de los archivos Gradle necesarios.
+
+#### Prohibido crear en los MS:
+❌ Carpetas como `.cve_resolver_backups/`
+❌ Archivos como `cve_resolver_report.json`
+❌ Archivos como `cve_resolver_consolidated_report.json`
+❌ Cualquier archivo de log o temporal
+
+#### Permitido modificar en los MS:
+✅ `build.gradle` (variables de versión)
+✅ `dependencyMgmt.gradle` (bloques useVersion)
+✅ `main.gradle` (NO se modifica según Regla 8.2)
+
+#### Ubicación correcta de archivos del agente:
+```
+cve_resolver_agent/
+├── backups/              # Backups organizados por MS
+│   ├── ms_auth/
+│   └── ms_upload/
+├── reports/              # Reportes JSON
+│   └── cve_resolver_*.json
+└── logs/                 # Logs de ejecución
+```
+
+**Justificación**: Esto mantiene los repositorios de microservicios limpios y evita que archivos temporales o de auditoría se suban accidentalmente al commit.
+
 ### 5.1 Modo Simulación (Default)
 - No modifica archivos
 - Muestra qué cambios haría
@@ -170,9 +254,64 @@ details.because "Fix: CVE-2026-33871"
 - Si no existe: **AGREGAR**
 - Verificación: Buscar `details.requested.group == 'grupo'`
 
-## 6. Auto-Detección de Java
+## 6. Validación de Proyecto
 
-### 6.1 Ubicaciones Buscadas (macOS)
+Antes de procesar CVEs, el agente valida la estructura y permisos del proyecto:
+
+### 6.1 Validaciones Realizadas
+
+| Validación | Descripción | Acción si falla |
+|------------|-------------|-----------------|
+| **Existencia** | El proyecto debe existir | Error crítico, no se procesa |
+| **Es directorio** | La ruta debe ser un directorio | Error crítico, no se procesa |
+| **build.gradle** | Debe existir archivo build.gradle | Error crítico, no se procesa |
+| **Permisos de lectura** | Debe tener permisos R+X | Error crítico, no se procesa |
+| **Gradle wrapper** | Presencia de gradlew/gradlew.bat | Advertencia, continúa con 'gradle' |
+| **Permisos gradlew** | gradlew debe ser ejecutable (Unix) | Advertencia, sugiere chmod +x |
+
+### 6.2 Flujo de Validación
+
+```
+Inicio
+  │
+  ▼
+Validar existencia ── No ──▶ Error
+  │
+  ▼
+Validar es directorio ── No ──▶ Error
+  │
+  ▼
+Validar build.gradle ── No ──▶ Error
+  │
+  ▼
+Validar permisos ── No ──▶ Error
+  │
+  ▼
+Verificar Gradle wrapper ── No ──▶ Advertencia
+  │
+  ▼
+Procesar CVEs
+```
+
+### 6.3 Reporte de Validación
+
+El resultado de la validación se incluye en el reporte JSON:
+
+```json
+{
+  "total_cves": 0,
+  "updates": [],
+  "compilation_success": null,
+  "rollback_performed": false,
+  "validation_errors": [
+    "No se encontró build.gradle en: /ruta/proyecto"
+  ]
+}
+```
+
+## 8. Auto-Detección de Java
+
+### 8.1 Ubicaciones Buscadas (macOS)
 1. `$JAVA_HOME` (si está definido)
 2. `/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`
 3. `/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home`
@@ -184,12 +323,12 @@ details.because "Fix: CVE-2026-33871"
 9. `/Library/Java/JavaVirtualMachines/zulu-21.jdk/Contents/Home`
 10. `/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home`
 
-### 6.2 Fallback
+### 8.2 Fallback
 Si no se encuentra Java, se intenta ejecutar Gradle con el Java del sistema (puede fallar).
 
-## 7. Validación por Compilación
+## 9. Validación por Compilación
 
-### 7.1 Comando de Compilación
+### 9.1 Comando de Compilación
 ```bash
 ./gradlew compileJava --no-daemon -q
 ```
@@ -198,7 +337,7 @@ O si no existe gradlew:
 gradle compileJava --no-daemon -q
 ```
 
-### 7.1.1 Configuración de JVM para Java 17/21+
+### 9.1.1 Configuración de JVM para Java 17/21+
 Para evitar errores de `ExceptionInInitializerError` y warnings de acceso nativo restringido en Java 17+ y Java 21+, el agente configura automáticamente:
 ```bash
 GRADLE_OPTS="--enable-native-access=ALL-UNNAMED"
@@ -213,30 +352,30 @@ Esto permite que Gradle acceda a métodos nativos sin warnings ni errores.
 
 **Nota**: Si defines tu propio `GRADLE_OPTS`, el agente lo respeta y solo agrega el flag si no está presente.
 
-### 7.2 Timeout
+### 9.2 Timeout
 - La compilación tiene un timeout de 5 minutos
 - Si excede el tiempo, se reporta como fallo
 
-### 7.3 Rollback Automático
+### 9.3 Rollback Automático
 - Si la compilación falla, el agente **ejecuta rollback automático**
 - El rollback restaura los archivos desde los backups creados en la sesión
 - Los backups de la sesión se mantienen (no se eliminan)
 - El reporte JSON incluye `rollback_performed: true`
 
-### 7.4 Manejo de Fallos (Rollback Fallido)
+### 9.4 Manejo de Fallos (Rollback Fallido)
 - Si el rollback falla, se muestra error crítico
 - Los backups permanecen en `.cve_resolver_backups/`
 - El usuario debe restaurar manualmente
 - El agente termina con código de error 1
 
-### 7.5 Desactivación de Validación
+### 9.5 Desactivación de Validación
 - Usar `--no-validate` para saltar la compilación
 - Útil en CI/CD donde la compilación se hace en otro paso
 - Más rápido pero sin validación de cambios
 
-## 8. Manejo de Archivos Múltiples (build.gradle + main.gradle)
+## 10. Manejo de Archivos Múltiples (build.gradle + main.gradle)
 
-### 8.1 Estructura Correcta
+### 10.1 Estructura Correcta
 
 **build.gradle (Entry Point):**
 ```gradle
@@ -283,7 +422,7 @@ apply plugin: 'jacoco'
 
 **Importante**: `main.gradle` aplica `dependencyMgmt.gradle` dentro de `allprojects { }` para que todos los subproyectos hereden la resolución de dependencias. Esto es diferente de `build.gradle` que aplica `dependencyMgmt.gradle` directamente (no dentro de allprojects).
 
-### 8.2 Comportamiento del Agente
+### 10.2 Comportamiento del Agente
 
 | Archivo | Variables CVE | useVersion blocks | Configuración |
 |---------|--------------|-------------------|---------------|
@@ -291,7 +430,7 @@ apply plugin: 'jacoco'
 | **main.gradle** | ❌ No modifica | ❌ No modifica | ❌ No modifica |
 | **dependencyMgmt.gradle** | ❌ No modifica | ✅ Agrega si falta | ❌ No modifica |
 
-### 8.3 Reglas Importantes
+### 10.3 Reglas Importantes
 
 1. **Variables CVE solo en build.gradle**
    - El agente SOLO modifica `build.gradle` para agregar/actualizar variables
@@ -307,7 +446,7 @@ apply plugin: 'jacoco'
    - Esto incluye submódulos
    - Las versiones hardcodeadas se actualizan a variables cuando es posible
 
-### 8.4 Ejemplo de Escenario
+### 10.4 Ejemplo de Escenario
 
 **Entrada CVE:**
 ```json
@@ -340,7 +479,7 @@ apply plugin: 'jacoco'
    - **NO SE MODIFICA**
    - Las variables definidas aquí se ignoran
 
-### 8.5 Dependencias Directas en Subcarpetas
+### 10.5 Dependencias Directas en Subcarpetas
 
 **Problema**: Las dependencias directas en `subcarpeta/build.gradle` usan versiones hardcodeadas que no heredan la versión segura.
 
@@ -370,34 +509,59 @@ dependencies {
 - ✅ Solo afecta a grupos mapeados en VERSION_MAP
 - ✅ Funciona en cualquier nivel de subcarpeta
 
-## 9. Backups
+## 11. Backups
 
-### 9.1 Ubicación
-`.cve_resolver_backups/` en la raíz del proyecto
+### 11.1 Ubicación
+**IMPORTANTE**: Los backups se almacenan en la carpeta del agente, NO en el proyecto:
+```
+cve_resolver_agent/
+├── backups/
+│   ├── ms_auth/
+│   │   ├── build.gradle.20260417_120530.backup
+│   │   └── dependencyMgmt.gradle.20260417_120530.backup
+│   └── ms_upload/
+│       └── ...
+```
 
-### 9.2 Nomenclatura
+### 11.2 Nomenclatura
 `{nombre_archivo}.{YYYYMMDD_HHMMSS}.backup`
 
 Ejemplos:
 - `build.gradle.20260417_120530.backup`
 - `dependencyMgmt.gradle.20260417_120530.backup`
 
-### 9.3 Política
+### 11.3 Política
 - Se crea backup ANTES de cualquier modificación
 - Un backup por archivo por ejecución del agente
 - No se eliminan automáticamente
+- Los backups NUNCA se crean en el proyecto (evitan subirse al commit)
 - Responsabilidad del usuario gestionarlos
 
-### 9.4 Restauración Manual
+### 11.4 Restauración Manual
 ```bash
-cp .cve_resolver_backups/build.gradle.20260417_120530.backup build.gradle
-cp .cve_resolver_backups/dependencyMgmt.gradle.20260417_120530.backup dependencyMgmt.gradle
+cp cve_resolver_agent/backups/ms_auth/build.gradle.20260417_120530.backup ms_auth/build.gradle
+cp cve_resolver_agent/backups/ms_auth/dependencyMgmt.gradle.20260417_120530.backup ms_auth/dependencyMgmt.gradle
 ```
 
-## 9. Salida del Agente
+## 12. Salida del Agente
 
-### 10.1 Reporte JSON
-Archivo: `cve_resolver_report.json` en el proyecto
+### 12.1 Ubicación de Archivos de Salida
+**IMPORTANTE**: Todos los archivos generados por el agente se almacenan en la carpeta del agente:
+
+```
+cve_resolver_agent/
+├── backups/                    # Backups de archivos modificados
+│   └── {nombre_ms}/
+├── reports/                  # Reportes JSON
+│   ├── cve_resolver_report_{nombre_ms}_{fecha}.json
+│   └── cve_resolver_consolidated_report_{fecha}.json
+└── logs/                     # Logs de ejecución (opcional)
+```
+
+**Nunca** se generan archivos dentro de los microservicios (evitan subirse al commit).
+
+### 12.2 Reporte JSON Individual
+Archivo: `cve_resolver_agent/reports/cve_resolver_report_{ms_name}_{timestamp}.json`
 
 ```json
 {
@@ -417,7 +581,7 @@ Archivo: `cve_resolver_report.json` en el proyecto
 }
 ```
 
-### 10.2 Campos del Reporte
+### 12.3 Campos del Reporte
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
 | `total_cves` | int | Número total de CVEs procesados |
@@ -431,7 +595,7 @@ Archivo: `cve_resolver_report.json` en el proyecto
 | `rollback_performed` | bool | Indica si se ejecutó rollback |
 | `dry_run` | bool | Indica si fue modo simulación |
 
-### 10.3 Salida en Consola
+### 12.4 Salida en Consola
 - Lista de CVEs cargados por severidad
 - Advertencias de validación (CVEs omitidos, versiones problemáticas)
 - Acciones realizadas (ADDED/UPDATED/SKIPPED)
@@ -440,7 +604,7 @@ Archivo: `cve_resolver_report.json` en el proyecto
 - Resultado de compilación (si aplica)
 - Resumen final
 
-## 11. Casos de Error
+## 13. Casos de Error
 
 ### 11.1 Archivo CVE No Encontrado
 - Mensaje: "Archivo CVE no encontrado"
@@ -475,7 +639,7 @@ Archivo: `cve_resolver_report.json` en el proyecto
 - Acción: Continúa con CVEs válidos
 - Detalle: Lista de omisiones con razón
 
-## 12. Dependencias
+## 14. Dependencias
 
 ### 12.1 Requisitos del Sistema
 - Python 3.8+
@@ -490,7 +654,7 @@ Archivo: `cve_resolver_report.json` en el proyecto
 - `cve_resolver_agent.py`
 - Archivo CVE JSON (por defecto: `snyk_cves_for_agent.json`)
 
-## 13. Limitaciones
+## 15. Limitaciones
 
 ### 13.1 Alcance
 - Solo proyectos Gradle con estructura build.gradle + dependencyMgmt.gradle
@@ -512,7 +676,7 @@ Archivo: `cve_resolver_report.json` en el proyecto
 - Timeout de 5 minutos para compilación
 - Rollback automático solo si compilación falla
 
-## 14. Flujo de Estados
+## 16. Flujo de Estados
 
 ```
 Inicio
@@ -538,9 +702,9 @@ Compilar ── Error ──▶ Rollback ──▶ Reportar ──▶ Fin
 Reportar éxito ──▶ Fin
 ```
 
-## 14. Soporte Monorepo (v1.0.0)
+## 17. Soporte Monorepo (v1.0.0)
 
-### 14.1 Modos de Ejecución
+### 17.1 Modos de Ejecución
 
 | Modo | Argumentos | Descripción |
 |------|------------|-------------|
@@ -549,7 +713,7 @@ Reportar éxito ──▶ Fin
 | Auto | `--folder path` | Auto-detecta `ms_*` en la carpeta |
 | Mixed | `--ms list --folder path` | Busca los ms en la carpeta especificada |
 
-### 14.2 Argumentos
+### 17.2 Argumentos
 
 #### `--ms` (Microservicios)
 - **Formato**: Lista separada por comas
@@ -564,7 +728,7 @@ Reportar éxito ──▶ Fin
 - **Con `--ms`**: Busca los microservicios en esa carpeta
 - **Sin `--ms`**: Auto-detecta carpetas `ms_*`
 
-### 14.3 Convención de Nombres Monorepo
+### 17.3 Convención de Nombres Monorepo
 
 #### Prefijo de Microservicios
 - **Patrón**: Carpeta debe comenzar con `ms_`
@@ -584,7 +748,7 @@ proyectos/
 └── otro_proyecto/                # Ignorado (no tiene prefijo ms_)
 ```
 
-### 14.4 Auto-detección
+### 17.4 Auto-detección
 
 #### Lógica de Detección
 ```
@@ -605,7 +769,7 @@ Retornar lista ordenada
 - **Lista**: `"   - {nombre_microservicio}"` para cada uno
 - **No encontrados**: `"⚠️ No se encontraron microservicios (carpetas ms_*) en {folder}"`
 
-### 14.5 Procesamiento de Múltiples Microservicios
+### 17.5 Procesamiento de Múltiples Microservicios
 
 #### Orden de Procesamiento
 1. Procesa microservicios en orden alfabético
@@ -614,13 +778,17 @@ Retornar lista ordenada
 4. Reporte individual por microservicio
 
 #### Reportes Generados
+**IMPORTANTE**: Todos los archivos se generan en la carpeta del agente:
+
 | Archivo | Ubicación | Descripción |
 |---------|-----------|-------------|
-| `cve_resolver_report.json` | Cada MS | Reporte individual del microservicio |
-| `cve_resolver_consolidated_report.json` | Carpeta raíz | Reporte agregado de todos los MS |
-| `.cve_resolver_backups/` | Cada MS | Backups de archivos modificados |
+| `reports/cve_resolver_report_{ms}_{fecha}.json` | `cve_resolver_agent/reports/` | Reporte individual del microservicio |
+| `reports/cve_resolver_consolidated_report_{fecha}.json` | `cve_resolver_agent/reports/` | Reporte agregado de todos los MS |
+| `backups/{ms}/{archivo}.{fecha}.backup` | `cve_resolver_agent/backups/` | Backups de archivos modificados |
 
-### 14.6 Reporte Consolidado
+**Nota**: Los archivos **NUNCA** se crean dentro de los microservicios para evitar que se suban al commit.
+
+### 17.6 Reporte Consolidado
 
 #### Estructura JSON
 ```json
@@ -658,7 +826,7 @@ Retornar lista ordenada
 | `summary.rollbacks` | int | Número de rollbacks ejecutados |
 | `results` | object | Resultado individual por MS |
 
-### 14.7 Manejo de Errores en Monorepo
+### 17.7 Manejo de Errores en Monorepo
 
 #### Microservicio No Encontrado
 - **Mensaje**: `⚠️ Microservicio no encontrado: {ruta}`
@@ -680,7 +848,7 @@ Retornar lista ordenada
 - **Al menos un fallo**: Código 1
 - **Mensaje final**: `"❌ Algunos microservicios tuvieron errores. Revisa el reporte consolidado."`
 
-### 14.8 Flujo de Estados (Monorepo)
+### 17.8 Flujo de Estados (Monorepo)
 
 ```
 Inicio
@@ -722,15 +890,15 @@ Generar Reporte Consolidado
 Fin
 ```
 
-## 15. Integración Git (v1.0.0)
+## 18. Integración Git (v1.0.0)
 
-### 15.1 Argumento `--commit`
+### 18.1 Argumento `--commit`
 
 - **Requiere**: `--apply` (no funciona en modo dry-run)
 - **Requiere**: Repositorio Git válido en el path base
 - **Opcional**: `user.name` configurado en Git
 
-### 15.2 Formato de Nombre de Rama
+### 18.2 Formato de Nombre de Rama
 
 ```
 feature/fix_vulnerabilidad_{DDMMYYYY}_{username}
@@ -746,7 +914,7 @@ feature/fix_vulnerabilidad_{DDMMYYYY}_{username}
 - `feature/fix_vulnerabilidad_17042026_juan.perez`
 - `feature/fix_vulnerabilidad_17042026_maria.garcia`
 
-### 15.3 Detección de Usuario
+### 18.3 Detección de Usuario
 
 **Orden de prioridad:**
 1. `git config user.name` (limpiado)
@@ -758,7 +926,7 @@ feature/fix_vulnerabilidad_{DDMMYYYY}_{username}
 - Reemplazar espacios con puntos
 - Eliminar caracteres especiales (solo `[a-z0-9._-]`)
 
-### 15.4 Mensaje de Commit
+### 18.4 Mensaje de Commit
 
 **Estructura:**
 ```
@@ -799,7 +967,7 @@ Modified files:
 Generated by CVE Resolver Agent v1.0.0
 ```
 
-### 15.5 Flujo de Commit
+### 18.5 Flujo de Commit
 
 ```
 --commit especificado?
@@ -840,7 +1008,7 @@ Mostrar resultado:
   - Comando para push
 ```
 
-### 15.6 Manejo de Errores
+### 18.6 Manejo de Errores
 
 | Condición | Mensaje | Acción |
 |-----------|---------|--------|
@@ -851,7 +1019,7 @@ Mostrar resultado:
 | Error en git add | `❌ {mensaje}` | Detiene flujo de commit |
 | Error en commit | `❌ Error creando commit: {mensaje}` | Detiene flujo de commit |
 
-### 15.7 Salida en Consola
+### 18.7 Salida en Consola
 
 **Commit Exitoso:**
 ```
@@ -881,7 +1049,7 @@ Fixed 8 CVE(s) affecting 5 dependency groups
    git push origin feature/fix_vulnerabilidad_17042026_juan.perez
 ```
 
-## 16. Escenarios de Prueba
+## 19. Escenarios de Prueba
 
 Ver `TEST_SCENARIOS.md` para casos de prueba detallados.
 
@@ -899,8 +1067,10 @@ python3 -m pytest test_cve_resolver_agent.py -v
 Cobertura de tests:
 - `TestDiscoverMicroservices`: Detección de carpetas `ms_*`
 - `TestParseMicroservices`: Parsing de argumentos
-- `TestSnykCVEProcessor`: Procesamiento de CVEs
+- `TestSnykCVEProcessor`: Procesamiento de CVEs incluyendo validaciones de formato
 - `TestBackupManager`: Gestión de backups
 - `TestGradleCVEUpdater`: Actualización de archivos Gradle
+- `TestDependencyMgmtUpdater`: Actualización de dependencyMgmt.gradle
 - `TestIntegration`: Escenarios completos de monorepo
-- `TestGitCommitManager`: Integración Git (6 tests)
+- `TestProjectValidator`: Validación de estructura y permisos de proyecto
+- `TestGitCommitManager`: Integración Git

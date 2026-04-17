@@ -10,6 +10,7 @@ Arquitectura:
 - Validación automática por compilación
 - Rollback automático si la compilación falla
 - Soporta formato Snyk JSON y formato Array Directo
+- Archivos generados (backups, reportes) en cve_resolver_agent/, NUNCA en los MS
 
 Uso:
     # Procesar un solo microservicio
@@ -114,6 +115,25 @@ except (AttributeError, ValueError):
     pass
 
 
+def get_agent_directory() -> Path:
+    """Retorna la ruta al directorio del agente (donde está este archivo)."""
+    return Path(__file__).parent.resolve()
+
+
+def get_reports_directory() -> Path:
+    """Retorna la ruta al directorio de reportes del agente."""
+    reports_dir = get_agent_directory() / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    return reports_dir
+
+
+def get_backups_directory(project_name: str) -> Path:
+    """Retorna la ruta al directorio de backups para un proyecto específico."""
+    backup_dir = get_agent_directory() / "backups" / project_name
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    return backup_dir
+
+
 @dataclass(frozen=True)
 class CVEEntry:
     """Representa una entrada CVE."""
@@ -138,8 +158,18 @@ class SnykCVEProcessor:
         (r'^\s*$', 'Empty version is not valid'),
     ]
 
+    # Patrón para validar formato de CVE ID: CVE-YYYY-NNNNN+
+    CVE_ID_PATTERN = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
+
+    # Patrón para validar formato de versión semántica básica
+    # Soporta: 1.0.0, 1.0.0.Final, 1.0.0-SNAPSHOT, 1.0.0-M1, 1.0.0-RC1, etc.
+    VERSION_PATTERN = re.compile(
+        r'^(\d+)(\.(\d+))?(\.(\d+))?(\.[\w-]+)?$'
+    )
+
     def __init__(self, cve_file_path: Path):
         self.cve_file_path = cve_file_path
+        self.validation_errors: List[Tuple[str, str]] = []  # (cve_id, error_message)
 
     def load_cves(self) -> List[CVEEntry]:
         """Carga CVEs desde archivo JSON con validaciones.
@@ -215,11 +245,25 @@ class SnykCVEProcessor:
                 skipped.append(('Sin CVE ID', library_name or 'unknown'))
                 continue
 
+            # Validar formato de CVE ID
+            is_valid_cve, cve_error = self._validate_cve_id_format(cve_id)
+            if not is_valid_cve:
+                skipped.append((f'CVE ID inválido: {cve_error}', cve_id))
+                self.validation_errors.append((cve_id, cve_error))
+                continue
+
             if not fixed_version:
                 skipped.append(('Sin versión fija', cve_id))
                 continue
 
-            # Validar versión problemática
+            # Validar formato de versión
+            is_valid_version, version_error = self._validate_version_format(fixed_version)
+            if not is_valid_version:
+                skipped.append((f'Versión inválida: {version_error}', cve_id))
+                self.validation_errors.append((cve_id, version_error))
+                continue
+
+            # Validar versión problemática (SNAPSHOT, RC, etc.)
             version_warning = self._validate_version(fixed_version)
             if version_warning:
                 print(f"   ⚠️  Advertencia en {cve_id}: {version_warning}")
@@ -263,6 +307,45 @@ class SnykCVEProcessor:
                 return message
         return None
 
+    def _validate_cve_id_format(self, cve_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        Valida el formato del CVE ID.
+
+        Returns:
+            Tuple[bool, Optional[str]]: (es_válido, mensaje_error)
+        """
+        if not cve_id:
+            return False, "CVE ID está vacío"
+
+        if not self.CVE_ID_PATTERN.match(cve_id):
+            return False, f"Formato inválido: '{cve_id}' debe seguir el patrón CVE-YYYY-NNNNN (ej: CVE-2024-12345)"
+
+        return True, None
+
+    def _validate_version_format(self, version: str) -> Tuple[bool, Optional[str]]:
+        """
+        Valida el formato básico de la versión.
+
+        Returns:
+            Tuple[bool, Optional[str]]: (es_válido, mensaje_error)
+        """
+        if not version or not version.strip():
+            return False, "Versión está vacía"
+
+        # Permitir versiones con variables de Gradle ${...}
+        if version.startswith('${') and version.endswith('}'):
+            return True, None
+
+        # Validar formato básico de versión
+        if not self.VERSION_PATTERN.match(version):
+            return False, f"Formato de versión inválido: '{version}'"
+
+        return True, None
+
+    def get_validation_report(self) -> List[Tuple[str, str]]:
+        """Retorna el reporte de errores de validación."""
+        return self.validation_errors.copy()
+
     def _sort_by_severity(self, entries: List[CVEEntry]) -> List[CVEEntry]:
         """Ordena CVEs por severidad (CRITICAL primero)."""
         return sorted(entries,
@@ -271,20 +354,29 @@ class SnykCVEProcessor:
 
 
 class BackupManager:
-    """Gestiona backups de archivos Gradle."""
+    """Gestiona backups de archivos Gradle en la carpeta del agente."""
 
-    def __init__(self, project_path: Path):
+    def __init__(self, project_path: Path, agent_backups_dir: Optional[Path] = None):
         self.project_path = project_path
-        self.backup_dir = project_path / ".cve_resolver_backups"
+        # Los backups van en la carpeta del agente, NO en el proyecto
+        if agent_backups_dir is None:
+            # Usar helper para crear estructura: cve_resolver_agent/backups/{project_name}/
+            self.backup_dir = get_backups_directory(project_path.name)
+        else:
+            self.backup_dir = agent_backups_dir
         self.created_backups: List[Tuple[Path, Path]] = []  # (backup_path, original_path)
 
     def create_backup(self, file_path: Path) -> Path:
-        """Crea backup del archivo y lo registra."""
-        self.backup_dir.mkdir(exist_ok=True)
+        """Crea backup del archivo en la carpeta del agente."""
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Crear un nombre único que incluya la ruta relativa para evitar conflictos
-        rel_path = file_path.relative_to(self.project_path)
+        try:
+            rel_path = file_path.relative_to(self.project_path)
+        except ValueError:
+            # Si no es relativo al proyecto, usar el nombre del archivo
+            rel_path = file_path.name
         safe_name = str(rel_path).replace(os.sep, '_')
         backup_filename = f"{safe_name}.{timestamp}.backup"
         backup_path = self.backup_dir / backup_filename
@@ -852,6 +944,69 @@ class GradleCompiler:
             return False, f"❌ Error durante compilación: {str(e)}"
 
 
+class ProjectValidator:
+    """Valida la estructura y permisos del proyecto antes de procesar."""
+
+    def __init__(self, project_path: Path):
+        self.project_path = project_path
+        self.errors: List[str] = []
+        self.warnings: List[str] = []
+
+    def validate(self) -> Tuple[bool, List[str], List[str]]:
+        """
+        Ejecuta todas las validaciones del proyecto.
+
+        Returns:
+            Tuple[bool, List[str], List[str]]: (es_válido, errores, advertencias)
+        """
+        self.errors = []
+        self.warnings = []
+
+        self._validate_project_exists()
+        self._validate_is_directory()
+        self._validate_read_permissions()
+        self._validate_build_gradle_exists()
+        self._validate_gradle_wrapper()
+
+        return len(self.errors) == 0, self.errors, self.warnings
+
+    def _validate_project_exists(self):
+        """Valida que el proyecto exista."""
+        if not self.project_path.exists():
+            self.errors.append(f"El proyecto no existe: {self.project_path}")
+
+    def _validate_is_directory(self):
+        """Valida que la ruta sea un directorio."""
+        if self.project_path.exists() and not self.project_path.is_dir():
+            self.errors.append(f"La ruta no es un directorio: {self.project_path}")
+
+    def _validate_read_permissions(self):
+        """Valida permisos de lectura."""
+        if self.project_path.exists():
+            if not os.access(self.project_path, os.R_OK | os.X_OK):
+                self.errors.append(f"Sin permisos de lectura en: {self.project_path}")
+
+    def _validate_build_gradle_exists(self):
+        """Valida que exista build.gradle."""
+        build_gradle = self.project_path / "build.gradle"
+        if self.project_path.exists() and not build_gradle.exists():
+            self.errors.append(f"No se encontró build.gradle en: {self.project_path}")
+
+    def _validate_gradle_wrapper(self):
+        """Valida la presencia del Gradle wrapper."""
+        gradlew = self.project_path / "gradlew"
+        gradlew_bat = self.project_path / "gradlew.bat"
+
+        if not gradlew.exists() and not gradlew_bat.exists():
+            self.warnings.append("No se encontró Gradle wrapper (gradlew). Se usará 'gradle' del sistema si está disponible")
+        else:
+            # Verificar permisos de ejecución en gradlew (Unix)
+            import platform
+            if platform.system() != "Windows" and gradlew.exists():
+                if not os.access(gradlew, os.X_OK):
+                    self.warnings.append("gradlew no tiene permisos de ejecución. Ejecutar: chmod +x gradlew")
+
+
 class CVEResolverAgent:
     """Agente principal para resolver CVEs en proyectos Gradle."""
 
@@ -869,10 +1024,39 @@ class CVEResolverAgent:
         print("🔍 CVE Resolver Agent")
         print("=" * 60)
 
+        # 0. Validar proyecto
+        print("🔍 Validando proyecto...")
+        validator = ProjectValidator(self.project_path)
+        is_valid, errors, warnings = validator.validate()
+
+        if warnings:
+            for warning in warnings:
+                print(f"   ⚠️  {warning}")
+
+        if not is_valid:
+            print("❌ Validación fallida:")
+            for error in errors:
+                print(f"   ❌ {error}")
+            return {
+                'total_cves': 0,
+                'updates': [],
+                'compilation_success': None,
+                'rollback_performed': False,
+                'dry_run': self.dry_run,
+                'validation_errors': errors
+            }
+
+        print("   ✅ Proyecto validado")
+
         # 1. Cargar CVEs
         print("📋 Cargando CVEs desde Snyk...")
         cves = self.cve_processor.load_cves()
         print(f"   {len(cves)} CVEs únicos cargados")
+
+        # Mostrar errores de validación de CVEs si los hay
+        validation_report = self.cve_processor.get_validation_report()
+        if validation_report:
+            print(f"   ⚠️  {len(validation_report)} CVEs omitidos por errores de validación")
 
         # 2. Mostrar resumen
         print("\n📊 Por severidad:")
@@ -1267,6 +1451,15 @@ def process_single_cve_for_microservice(
     }
 
     try:
+        # Validar proyecto primero
+        validator = ProjectValidator(project_path)
+        is_valid, errors, warnings = validator.validate()
+
+        if not is_valid:
+            result['success'] = False
+            result['message'] = f"Validación fallida: {'; '.join(errors)}"
+            return result
+
         # Crear agente y procesar SOLO este CVE
         agent = CVEResolverAgent(project_path, cve_file, dry_run=dry_run, validate=validate, debug=debug)
 
@@ -1523,10 +1716,12 @@ Ejemplos:
 
         for ms_path in valid_microservices:
             if ms_path.name in all_results:
-                report_file = ms_path / "cve_resolver_report.json"
+                # Guardar reporte en la carpeta del agente, NO en el proyecto
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_file = get_reports_directory() / f"cve_resolver_report_{ms_path.name}_{timestamp}.json"
                 with open(report_file, 'w', encoding='utf-8') as f:
                     json.dump(all_results[ms_path.name], f, indent=2)
-                print(f"   📄 {ms_path.name}/cve_resolver_report.json")
+                print(f"   📄 Reporte guardado: {report_file}")
 
     # ====================================================================================
     # Modo Secuencial Original (o single microservicio)
@@ -1564,8 +1759,9 @@ Ejemplos:
                 results = agent.run()
                 all_results[project_path.name] = results
 
-                # Guardar reporte individual
-                report_file = project_path / "cve_resolver_report.json"
+                # Guardar reporte individual en la carpeta del agente, NO en el proyecto
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_file = get_reports_directory() / f"cve_resolver_report_{project_path.name}_{timestamp}.json"
                 with open(report_file, 'w', encoding='utf-8') as f:
                     json.dump(results, f, indent=2)
                 print(f"\n📄 Reporte individual: {report_file}")
@@ -1616,15 +1812,9 @@ Ejemplos:
         'results': all_results
     }
 
-    # Guardar en la carpeta raíz (folder, project_path o directorio actual)
-    if args.folder:
-        report_base_path = Path(args.folder)
-    elif args.microservices:
-        report_base_path = microservices[0].parent if microservices else Path(".")
-    else:
-        report_base_path = Path(args.project_path)
-
-    consolidated_file = report_base_path / "cve_resolver_consolidated_report.json"
+    # Guardar reporte consolidado en la carpeta del agente, NO en el proyecto
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    consolidated_file = get_reports_directory() / f"cve_resolver_consolidated_report_{timestamp}.json"
     with open(consolidated_file, 'w', encoding='utf-8') as f:
         json.dump(consolidated_report, f, indent=2)
     print(f"\n📄 Reporte consolidado: {consolidated_file}")

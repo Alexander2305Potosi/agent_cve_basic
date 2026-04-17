@@ -36,6 +36,7 @@ SnykCVEProcessor = cve_resolver_agent_module.SnykCVEProcessor
 GradleCVEUpdater = cve_resolver_agent_module.GradleCVEUpdater
 BackupManager = cve_resolver_agent_module.BackupManager
 GitCommitManager = cve_resolver_agent_module.GitCommitManager
+ProjectValidator = cve_resolver_agent_module.ProjectValidator
 discover_microservices = cve_resolver_agent_module.discover_microservices
 parse_microservices = cve_resolver_agent_module.parse_microservices
 
@@ -261,9 +262,9 @@ class TestSnykCVEProcessor(unittest.TestCase):
         """Normaliza severidad a mayúsculas"""
         data = {
             "cves": [
-                {"cve_id": "CVE-1", "library_name": "test", "fixed_version": "1.0", "severity": "critical"},
-                {"cve_id": "CVE-2", "library_name": "test", "fixed_version": "1.0", "severity": "HIGH"},
-                {"cve_id": "CVE-3", "library_name": "test", "fixed_version": "1.0"}
+                {"cve_id": "CVE-2024-1001", "library_name": "test", "fixed_version": "1.0", "severity": "critical"},
+                {"cve_id": "CVE-2024-1002", "library_name": "test", "fixed_version": "1.0", "severity": "HIGH"},
+                {"cve_id": "CVE-2024-1003", "library_name": "test", "fixed_version": "1.0"}
             ]
         }
         cve_file = self.create_cve_file(data)
@@ -279,18 +280,18 @@ class TestSnykCVEProcessor(unittest.TestCase):
         """Ordena CVEs por severidad (CRITICAL primero)"""
         data = {
             "cves": [
-                {"cve_id": "CVE-LOW", "library_name": "test", "fixed_version": "1.0", "severity": "LOW"},
-                {"cve_id": "CVE-CRIT", "library_name": "test", "fixed_version": "1.0", "severity": "CRITICAL"},
-                {"cve_id": "CVE-MED", "library_name": "test", "fixed_version": "1.0", "severity": "MEDIUM"}
+                {"cve_id": "CVE-2024-3001", "library_name": "test", "fixed_version": "1.0", "severity": "LOW"},
+                {"cve_id": "CVE-2024-3002", "library_name": "test", "fixed_version": "1.0", "severity": "CRITICAL"},
+                {"cve_id": "CVE-2024-3003", "library_name": "test", "fixed_version": "1.0", "severity": "MEDIUM"}
             ]
         }
         cve_file = self.create_cve_file(data)
         processor = SnykCVEProcessor(cve_file)
         cves = processor.load_cves()
 
-        self.assertEqual(cves[0].cve_id, "CVE-CRIT")
-        self.assertEqual(cves[1].cve_id, "CVE-MED")
-        self.assertEqual(cves[2].cve_id, "CVE-LOW")
+        self.assertEqual(cves[0].cve_id, "CVE-2024-3002")
+        self.assertEqual(cves[1].cve_id, "CVE-2024-3003")
+        self.assertEqual(cves[2].cve_id, "CVE-2024-3001")
 
     def test_load_array_format_cves(self):
         """Carga CVEs desde formato array directo"""
@@ -335,9 +336,9 @@ class TestSnykCVEProcessor(unittest.TestCase):
     def test_array_format_priority_normalization(self):
         """Normaliza priority a severity en formato array"""
         data = [
-            {"cve": "CVE-1", "library": "test:lib", "safe_version": "1.0", "priority": "critical"},
-            {"cve": "CVE-2", "library": "test:lib", "safe_version": "1.0", "priority": "HIGH"},
-            {"cve": "CVE-3", "library": "test:lib", "safe_version": "1.0"}
+            {"cve": "CVE-2024-1001", "library": "test:lib", "safe_version": "1.0", "priority": "critical"},
+            {"cve": "CVE-2024-1002", "library": "test:lib", "safe_version": "1.0", "priority": "HIGH"},
+            {"cve": "CVE-2024-1003", "library": "test:lib", "safe_version": "1.0"}
         ]
         cve_file = self.create_cve_file(data)
         processor = SnykCVEProcessor(cve_file)
@@ -347,6 +348,111 @@ class TestSnykCVEProcessor(unittest.TestCase):
         self.assertIn("CRITICAL", severities)
         self.assertIn("HIGH", severities)
         self.assertIn("UNKNOWN", severities)
+
+    def test_validate_cve_id_format_valid(self):
+        """Acepta CVE IDs con formato válido"""
+        processor = SnykCVEProcessor(Path("/tmp/test.json"))
+
+        valid_cves = [
+            "CVE-2024-12345",
+            "CVE-2023-12345678",
+            "cve-2024-12345",
+            "CVE-2024-1234"
+        ]
+
+        for cve in valid_cves:
+            is_valid, error = processor._validate_cve_id_format(cve)
+            self.assertTrue(is_valid, f"{cve} debería ser válido")
+            self.assertIsNone(error)
+
+    def test_validate_cve_id_format_invalid(self):
+        """Rechaza CVE IDs con formato inválido"""
+        processor = SnykCVEProcessor(Path("/tmp/test.json"))
+
+        invalid_cves = [
+            ("CVE-2024", "debe seguir el patrón"),
+            ("2024-12345", "debe seguir el patrón"),
+            ("VULN-2024-12345", "debe seguir el patrón"),
+            ("", "vacío"),
+        ]
+
+        for cve, expected_error in invalid_cves:
+            is_valid, error = processor._validate_cve_id_format(cve)
+            self.assertFalse(is_valid, f"{cve} debería ser inválido")
+            self.assertIsNotNone(error)
+            if expected_error:
+                self.assertIn(expected_error.lower(), error.lower())
+
+    def test_validate_version_format_valid(self):
+        """Acepta versiones con formato válido"""
+        processor = SnykCVEProcessor(Path("/tmp/test.json"))
+
+        valid_versions = [
+            "1.0.0",
+            "4.1.132.Final",
+            "2.17.2",
+            "1.0",
+            "1",
+            "${variable}",
+            "1.0.0-SNAPSHOT",
+            "1.0.0-M1",
+            "1.0.0-RC1"
+        ]
+
+        for version in valid_versions:
+            is_valid, error = processor._validate_version_format(version)
+            self.assertTrue(is_valid, f"'{version}' debería ser válido")
+            self.assertIsNone(error)
+
+    def test_validate_version_format_invalid(self):
+        """Rechaza versiones con formato inválido"""
+        processor = SnykCVEProcessor(Path("/tmp/test.json"))
+
+        invalid_versions = [
+            ('"1.0.0"', "con comillas"),
+            ("version-1.0", "prefijo no numérico"),
+            ("", "vacía"),
+        ]
+
+        for version, expected_error in invalid_versions:
+            is_valid, error = processor._validate_version_format(version)
+            self.assertFalse(is_valid, f"'{version}' debería ser inválido")
+            self.assertIsNotNone(error)
+
+    def test_skip_invalid_cve_id_format(self):
+        """Omite CVEs con formato de ID inválido"""
+        data = {
+            "cves": [
+                {"cve_id": "CVE-2024", "library_name": "test", "fixed_version": "1.0"},
+                {"cve_id": "CVE-2024-12345", "library_name": "test", "fixed_version": "1.0"}
+            ]
+        }
+        cve_file = self.create_cve_file(data)
+        processor = SnykCVEProcessor(cve_file)
+        cves = processor.load_cves()
+
+        self.assertEqual(len(cves), 1)
+        self.assertEqual(cves[0].cve_id, "CVE-2024-12345")
+
+        # Verificar reporte de validación
+        validation_report = processor.get_validation_report()
+        self.assertEqual(len(validation_report), 1)
+        self.assertIn("CVE-2024", validation_report[0][0])
+
+    def test_skip_invalid_version_format(self):
+        """Omite CVEs con formato de versión inválido"""
+        data = {
+            "cves": [
+                {"cve_id": "CVE-2024-1234", "library_name": "test", "fixed_version": '"1.0.0"'},
+                {"cve_id": "CVE-2024-5678", "library_name": "test", "fixed_version": "1.0.0"}
+            ]
+        }
+        cve_file = self.create_cve_file(data)
+        processor = SnykCVEProcessor(cve_file)
+        cves = processor.load_cves()
+
+        self.assertEqual(len(cves), 1)
+        self.assertEqual(cves[0].cve_id, "CVE-2024-5678")
 
 
 class TestBackupManager(unittest.TestCase):
@@ -628,10 +734,8 @@ buildscript {
 
         updater._update_dependency_mgmt("nettyVersion", cve, dry_run=False)
 
-        backup_dir = self.project_path / ".cve_resolver_backups"
-        self.assertTrue(backup_dir.exists())
-        backups = list(backup_dir.glob("*.backup"))
-        self.assertGreater(len(backups), 0)
+        # Los backups ahora se crean en el directorio del agente, no en el proyecto
+        self.assertGreater(len(updater.backup_manager.created_backups), 0)
 
 
 class TestIntegration(unittest.TestCase):
@@ -710,11 +814,82 @@ configurations.configureEach {
             updater = GradleCVEUpdater(ms_dir, dry_run=False)
             updater.update(cves)
 
-            # Verificar que existe el backup
-            backup_dir = ms_dir / ".cve_resolver_backups"
-            self.assertTrue(backup_dir.exists())
-            backups = list(backup_dir.glob("*.backup"))
-            self.assertGreater(len(backups), 0)
+            # Verificar que se crearon backups (en el directorio del agente)
+            self.assertGreater(len(updater.backup_manager.created_backups), 0)
+
+
+class TestProjectValidator(unittest.TestCase):
+    """Tests para ProjectValidator"""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.temp_path = Path(self.temp_dir)
+        self.project_path = self.temp_path / "project"
+        self.project_path.mkdir()
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    def test_validate_existing_project(self):
+        """Valida proyecto existente"""
+        # Crear build.gradle
+        (self.project_path / "build.gradle").write_text("// gradle file")
+
+        validator = ProjectValidator(self.project_path)
+        is_valid, errors, warnings = validator.validate()
+
+        self.assertTrue(is_valid)
+        self.assertEqual(len(errors), 0)
+
+    def test_validate_nonexistent_project(self):
+        """Rechaza proyecto inexistente"""
+        nonexistent = Path("/ruta/que/no/existe")
+        validator = ProjectValidator(nonexistent)
+        is_valid, errors, warnings = validator.validate()
+
+        self.assertFalse(is_valid)
+        self.assertTrue(any("no existe" in e.lower() for e in errors))
+
+    def test_validate_not_directory(self):
+        """Rechaza si no es directorio"""
+        file_path = self.temp_path / "not_a_directory.txt"
+        file_path.write_text("content")
+
+        validator = ProjectValidator(file_path)
+        is_valid, errors, warnings = validator.validate()
+
+        self.assertFalse(is_valid)
+        self.assertTrue(any("no es un directorio" in e.lower() for e in errors))
+
+    def test_validate_no_build_gradle(self):
+        """Rechaza si no existe build.gradle"""
+        validator = ProjectValidator(self.project_path)
+        is_valid, errors, warnings = validator.validate()
+
+        self.assertFalse(is_valid)
+        self.assertTrue(any("build.gradle" in e.lower() for e in errors))
+
+    def test_validate_no_gradlew_warning(self):
+        """Advertencia si no existe gradlew"""
+        (self.project_path / "build.gradle").write_text("// gradle file")
+
+        validator = ProjectValidator(self.project_path)
+        is_valid, errors, warnings = validator.validate()
+
+        self.assertTrue(is_valid)  # No es error crítico
+        self.assertTrue(any("wrapper" in w.lower() for w in warnings))
+
+    def test_validate_gradlew_exists(self):
+        """No hay advertencia si gradlew existe"""
+        (self.project_path / "build.gradle").write_text("// gradle file")
+        (self.project_path / "gradlew").write_text("#!/bin/bash")
+
+        validator = ProjectValidator(self.project_path)
+        is_valid, errors, warnings = validator.validate()
+
+        self.assertTrue(is_valid)
+        # No debería haber advertencia de wrapper
+        self.assertFalse(any("wrapper" in w.lower() for w in warnings))
 
 
 class TestGitCommitManager(unittest.TestCase):
@@ -847,6 +1022,7 @@ def run_basic_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestGradleCVEUpdater))
     suite.addTests(loader.loadTestsFromTestCase(TestDependencyMgmtUpdater))
     suite.addTests(loader.loadTestsFromTestCase(TestIntegration))
+    suite.addTests(loader.loadTestsFromTestCase(TestProjectValidator))
     suite.addTests(loader.loadTestsFromTestCase(TestGitCommitManager))
 
     runner = unittest.TextTestRunner(verbosity=2)
