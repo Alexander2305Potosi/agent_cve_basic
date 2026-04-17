@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CVE Resolver Agent v1.5.2 - Para Spring WebFlux + Gradle (Soporte Monorepo + Git + Paralelo)
+CVE Resolver Agent v1.0.0 - Para Spring WebFlux + Gradle
 
 Arquitectura:
 - Variables de versión: SOLO en build.gradle (bloque buildscript.ext)
@@ -28,52 +28,28 @@ Uso:
     python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --parallel
     python3 cve_resolver_agent.py --folder /ruta/proyectos --apply --parallel --max-workers 10
 
-Changelog v1.5.2:
-- Procesamiento paralelo: Nuevo argumento `--parallel` para procesar CVEs en paralelo
-- Optimización para monorepo: Cada CVE se aplica a todos los microservicios simultáneamente
-- Configurable: `--max-workers` para controlar el número de hilos (default: 5)
-- Mejor rendimiento: Reduce tiempo de ejecución en monorepos grandes
-
-Changelog v1.5.1:
-- Agregado tiempo de ejecución al final del log (formato legible: segundos, minutos, horas)
-
-Changelog v1.5.0:
-- Integración Git: Nuevo argumento --commit para crear commits automáticos
-- Auto-creación de rama: feature/fix_vulnerabilidad_{ddmmyyyy}_{username}
-- Mensaje de commit descriptivo con microservicios modificados y CVEs resueltos
-- Detección automática del nombre de usuario git
-- Verificación de repositorio git antes de crear commits
-
-Changelog v1.4.0:
-- Soporte para monorepo (múltiples microservicios)
-- Nuevo argumento --ms para especificar carpetas de microservicios (coma separados)
-- Nuevo argumento --folder para especificar carpeta raíz de microservicios
-- Auto-detección de carpetas ms_* en raíz cuando se usa --folder sin --ms
-- Reporte consolidado para todos los microservicios procesados
-- Soporta estructura monorepositorio con prefijo ms_
-
-Changelog v1.3.0:
-- Soporte para múltiples build.gradle (submódulos)
-- Actualización de dependencias directas en todos los submódulos
-- Mejorado BackupManager para manejar rutas de archivos anidadas
-
-Changelog v1.2.0:
-- Agregada validación de CVEs (cve_id no vacío, versión válida)
+Changelog v1.0.0:
+- Validación por compilación automática (--apply)
+- Flag --no-validate para saltar compilación
+- Reporte JSON incluye compilation_success
+- Rollback automático si la compilación falla
+- Reporte JSON incluye rollback_performed
+- Validación de CVEs (cve_id no vacío, versión válida)
 - Normalización de severidad a mayúsculas
 - Advertencias para versiones SNAPSHOT/Milestone/RC
 - Escapado de caracteres especiales en because
 - Auto-detección de Java en macOS
-- Fix: Regex para detectar bloque ext en build.gradle
-- Fix: Manejo especial de org.apache.commons con verificación de artifact
-
-Changelog v1.1.0:
-- Rollback automático si la compilación falla
-- Reporte JSON incluye rollback_performed
-
-Changelog v1.0.0:
-- Agregada validación por compilación automática (--apply)
-- Flag --no-validate para saltar compilación
-- Reporte JSON incluye compilation_success
+- Soporte para múltiples build.gradle (submódulos)
+- Actualización de dependencias directas en todos los submódulos
+- Soporte para monorepo (múltiples microservicios)
+- Nuevos argumentos --ms y --folder para procesar múltiples microservicios
+- Auto-detección de carpetas ms_* en modo monorepo
+- Reporte consolidado para todos los microservicios procesados
+- Integración Git: Nuevo argumento --commit para crear commits automáticos
+- Auto-creación de rama: feature/fix_vulnerabilidad_{ddmmyyyy}_{username}
+- Mensaje de commit descriptivo con microservicios modificados y CVEs resueltos
+- Tiempo de ejecución al final del log
+- Procesamiento paralelo: Nuevo argumento --parallel para procesar CVEs en paralelo
 """
 
 import json
@@ -1133,12 +1109,6 @@ Ejemplos:
     # Modo Paralelo: Procesar cada CVE en todos los microservicios simultáneamente
     # ====================================================================================
     if args.parallel and len(microservices) > 1:
-        print("=" * 60)
-        print(f"🚀 CVE Resolver Agent v1.5.2 - Modo Paralelo")
-        print(f"🔧 {len(valid_microservices)} microservicios x {len(all_cves)} CVEs")
-        print(f"⚡ Max workers: {args.max_workers}")
-        print("=" * 60)
-
         # Validar microservicios primero
         valid_microservices = []
         for ms_path in microservices:
@@ -1156,6 +1126,12 @@ Ejemplos:
         if not valid_microservices:
             print("❌ No hay microservicios válidos para procesar")
             sys.exit(1)
+
+        print("=" * 60)
+        print(f"🚀 CVE Resolver Agent v1.0.0 - Modo Paralelo")
+        print(f"🔧 {len(valid_microservices)} microservicios x {len(all_cves)} CVEs")
+        print(f"⚡ Max workers: {args.max_workers}")
+        print("=" * 60)
 
         # Procesar cada CVE en paralelo para todos los microservicios
         for cve_idx, cve in enumerate(all_cves, 1):
@@ -1240,7 +1216,7 @@ Ejemplos:
     # ====================================================================================
     else:
         print("=" * 60)
-        print(f"🚀 CVE Resolver Agent v1.5.2 - Modo {'Secuencial' if len(microservices) > 1 else 'Single'}")
+        print(f"🚀 CVE Resolver Agent v1.0.0 - Modo {'Secuencial' if len(microservices) > 1 else 'Single'}")
         print(f"🔧 Procesando {len(microservices)} microservicio(s) x {len(all_cves)} CVE(s)")
         print("=" * 60)
 

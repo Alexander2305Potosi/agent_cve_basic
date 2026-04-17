@@ -867,6 +867,36 @@ El agente continúa procesando CVEs pero no intenta crear commit.
 
 ## Escenarios v1.5.2 (Procesamiento Paralelo con 5 Microservicios)
 
+### Escenario 32b: Bug Fix - Variable `valid_microservices` en Modo Paralelo
+
+**Objetivo**: Verificar que el modo paralelo maneja correctamente la variable `valid_microservices`
+
+**Bug Encontrado**: Error `UnboundLocalError: cannot access local variable 'valid_microservices'` cuando se ejecutaba modo paralelo
+
+**Causa**: La variable `valid_microservices` se usaba en un print statement antes de ser definida
+
+**Fix**: Reordenar código para validar microservicios antes de imprimir el header
+
+**Comando**: `python3 cve_resolver_agent.py --folder ../supplier_documents_backend --apply --parallel`
+
+**Resultado Esperado (Antes del fix)**:
+```
+Traceback (most recent call last):
+  File "cve_resolver_agent.py", line 1138, in main
+    print(f"🔧 {len(valid_microservices)} microservicios...")
+                    ^^^^^^^^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'valid_microservices'
+```
+
+**Resultado Esperado (Después del fix)**:
+```
+🚀 CVE Resolver Agent v1.5.2 - Modo Paralelo
+🔧 5 microservicios x 3 CVEs
+⚡ Max workers: 5
+```
+
+**Estado**: ✅ FIXED (v1.5.2)
+
 ### Escenario 33: Procesamiento Paralelo Básico
 
 **Objetivo**: Procesar CVEs en paralelo para todos los microservicios del monorepo
@@ -1058,6 +1088,7 @@ Speedup: ~5x más rápido
 - [x] Total: 35 tests passed
 
 ### Procesamiento Paralelo (v1.5.2) - Monorepo 5 MS
+- [x] Escenario 32b: Bug Fix - Variable `valid_microservices` en modo paralelo
 - [x] Escenario 33: Procesamiento paralelo básico
 - [x] Escenario 34: Configuración de workers (--max-workers)
 - [x] Escenario 35: Paralelo con rollback

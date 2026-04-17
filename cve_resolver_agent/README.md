@@ -1,12 +1,8 @@
-# CVE Resolver Agent v1.5.2
+# CVE Resolver Agent v1.0.0
 
 Agente Python portable para resolver CVEs en proyectos Spring WebFlux + Gradle mediante archivos de configuración de dependencias.
 
 Soporta **monorepositorios** - procesa múltiples microservicios en una sola ejecución.
-
-**Nuevo en v1.5.2**: **Procesamiento paralelo** - cada CVE se aplica simultáneamente a todos los microservicios para ganar tiempo en monorepos grandes.
-
-**Nuevo en v1.5.0**: Integración Git para crear commits automáticos con mensajes descriptivos.
 
 ## Características
 
@@ -23,10 +19,10 @@ Soporta **monorepositorios** - procesa múltiples microservicios en una sola eje
 - Soporte multi-SO: Compatible con macOS, Linux y Windows
 - **Soporte Monorepo: Procesa múltiples microservicios con `--ms` o `--folder`**
 - **Auto-detección: Detecta automáticamente carpetas `ms_*` en modo monorepo**
-- **🆕🆕 Procesamiento Paralelo: Cada CVE se aplica simultáneamente a todos los MS (`--parallel`)**
-- **🆕 Integración Git: Crea commits automáticos con `--commit`**
-- **🆕 Ramas automáticas: Crea rama `feature/fix_vulnerabilidad_{fecha}_{usuario}`**
-- **🆕 Mensajes descriptivos: Incluye CVEs resueltos y MS modificados en el commit**
+- **Procesamiento Paralelo: Cada CVE se aplica simultáneamente a todos los MS (`--parallel`)**
+- **Integración Git: Crea commits automáticos con `--commit`**
+- **Ramas automáticas: Crea rama `feature/fix_vulnerabilidad_{fecha}_{usuario}`**
+- **Mensajes descriptivos: Incluye CVEs resueltos y MS modificados en el commit**
 
 ## Arquitectura
 
@@ -64,7 +60,7 @@ configurations.all {
 
 ```
 cve_resolver_agent/
-├── cve_resolver_agent.py           # Agente principal (v1.5.2)
+├── cve_resolver_agent.py           # Agente principal (v1.0.0)
 ├── test_cve_resolver_agent.py      # Tests unitarios
 ├── snyk_cves_for_agent.json        # Ejemplo de entrada CVE (formato Snyk)
 ├── test_scenarios.json             # Escenarios de prueba para validación
@@ -622,53 +618,24 @@ Y continuará con el procesamiento normal.
 
 ## Changelog
 
-### v1.5.2
-- **🆕🆕 Procesamiento Paralelo**: Nuevo argumento `--parallel` para procesar CVEs en paralelo
-- **Optimización para monorepo**: Cada CVE se aplica simultáneamente a todos los microservicios
-- **Configurable**: `--max-workers` para controlar el número de hilos (default: 5)
-- **Mejor rendimiento**: Reduce tiempo de ejecución en monorepos grandes (~5x más rápido con 5 MS)
-
-### v1.5.1
-- **Tiempo de ejecución**: Muestra tiempo total al final del log (segundos, minutos u horas)
-
-### v1.5.0
-- **🆕 Integración Git**: Nuevo argumento `--commit` para crear commits automáticos
-- **🆕 Rama automática**: Crea rama con formato `feature/fix_vulnerabilidad_{ddmmyyyy}_{username}`
-- **🆕 Mensaje descriptivo**: Commit incluye microservicios modificados, CVEs resueltos, severidad y archivos cambiados
-- **🆕 Detección de usuario**: Detecta automáticamente el nombre de usuario de git
-- **🆕 Validación de repo**: Verifica que sea un repositorio git antes de intentar commitear
-
-### v1.4.0
-- **Soporte para monorepo**: Procesa múltiples microservicios en una sola ejecución
-- **Nuevo argumento `--ms`**: Especifica carpetas de microservicios separadas por coma
-- **Nuevo argumento `--folder`**: Especifica carpeta raíz que contiene microservicios
-- **Auto-detección**: Detecta automáticamente carpetas `ms_*` cuando se usa `--folder` sin `--ms`
-- **Reporte consolidado**: Genera reporte agregado con estadísticas de todos los microservicios
-- **Reportes individuales**: Cada microservicio recibe su propio reporte
-- **Procesamiento secuencial**: Procesa microservicios uno por uno con manejo de errores
-
-### v1.3.0
-- Soporte para múltiples build.gradle (submódulos)
-- Actualización de dependencias directas en todos los submódulos
-- Mejorado BackupManager para manejar rutas de archivos anidados
-
-### v1.2.0
-- Agregada validación de CVEs (cve_id no vacío, versión válida)
-- Normalización de severidad a mayúsculas
-- Advertencias para versiones SNAPSHOT/Milestone/RC
-- Escapado de caracteres especiales en because
-- Auto-detección de Java en macOS
-- Fix: Regex para detectar bloque ext en build.gradle
-- Fix: Manejo especial de org.apache.commons con verificación de artifact
-
-### v1.1.0
-- Rollback automático si la compilación falla
-- Reporte JSON incluye rollback_performed
-
 ### v1.0.0
-- Agregada validación por compilación automática (--apply)
-- Flag --no-validate para saltar compilación
-- Reporte JSON incluye compilation_success
+- **Validación por compilación automática**: Flag `--apply` para aplicar cambios y `--no-validate` para saltar compilación
+- **Rollback automático**: Restaura archivos originales si la compilación falla
+- **Reporte JSON**: Genera reporte detallado con `compilation_success` y `rollback_performed`
+- **Validación de CVEs**: Rechaza CVEs sin ID o con versiones inválidas, normaliza severidad a mayúsculas
+- **Advertencias**: Detecta versiones SNAPSHOT/Milestone/RC
+- **Escapado de caracteres**: Maneja caracteres especiales en descripciones de CVE
+- **Auto-detección de Java**: Encuentra Java instalado en macOS automáticamente
+- **Soporte para submódulos**: Actualiza múltiples build.gradle (incluye submódulos anidados)
+- **Soporte para monorepo**: Procesa múltiples microservicios con `--ms` o `--folder`
+- **Auto-detección de MS**: Detecta automáticamente carpetas `ms_*` en modo monorepo
+- **Reporte consolidado**: Genera reporte agregado con estadísticas de todos los microservicios
+- **Integración Git**: Nuevo argumento `--commit` para crear commits automáticos
+- **Rama automática**: Crea rama `feature/fix_vulnerabilidad_{ddmmyyyy}_{username}`
+- **Mensajes descriptivos**: Commit incluye microservicios modificados, CVEs resueltos, severidad y archivos cambiados
+- **Tiempo de ejecución**: Muestra tiempo total al final del log
+- **Procesamiento paralelo**: Argumento `--parallel` para procesar CVEs simultáneamente en múltiples microservicios
+- **Configurable**: `--max-workers` para controlar el número de hilos (default: 5)
 
 ## Licencia
 
