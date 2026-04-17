@@ -1154,13 +1154,13 @@ Speedup: ~5x más rápido
 ### Tests Unitarios
 - [x] TestDiscoverMicroservices: 7 tests
 - [x] TestParseMicroservices: 7 tests
-- [x] TestSnykCVEProcessor: 5 tests
+- [x] TestSnykCVEProcessor: 8 tests (+3 para formato array)
 - [x] TestBackupManager: 3 tests
 - [x] TestGradleCVEUpdater: 3 tests
-- [x] TestDependencyMgmtUpdater: 10 tests (nuevo - exhaustivo para _update_dependency_mgmt)
+- [x] TestDependencyMgmtUpdater: 10 tests
 - [x] TestIntegration: 4 tests
 - [x] TestGitCommitManager: 6 tests
-- [x] Total: 44 tests passed
+- [x] Total: 47 tests passed
 
 ### Procesamiento Paralelo (v1.0.0) - Monorepo 5 MS
 - [x] Escenario 32b: Bug Fix - Variable `valid_microservices` en modo paralelo
@@ -1471,9 +1471,11 @@ Esto asegura que todos los subproyectos hereden la resolución de dependencias.
 - [x] Escenario 39: dependencyMgmt.gradle agrega useVersion para variables nuevas
 - [x] Escenario 40: Ctrl+C termina proceso limpiamente
 - [x] Escenario 41: Solo build.gradle se modifica, main.gradle se ignora
+- [x] Escenario 42: Formato Array Directo con campos "cve", "library", "priority"
+- [x] Escenario 43: Parseo de library en formato "group:name"
 - Detección de usuario: Detecta automáticamente el nombre de usuario de git
 - Validación de repo: Verifica que sea un repositorio git antes de intentar commitear
-- 35 tests unitarios (6 nuevos para integración Git)
+- 47 tests unitarios (3 nuevos para formato array)
 
 ### Cambios v1.0.0
 - Soporte para monorepo (múltiples microservicios)
@@ -1505,6 +1507,96 @@ Esto asegura que todos los subproyectos hereden la resolución de dependencias.
 
 ---
 
+## Escenarios v1.0.0 (Soporte Múltiples Formatos)
+
+### Escenario 42: Formato Array Directo
+
+**Objetivo**: Verificar que el agente procesa correctamente el formato array directo con campos "cve", "library", "priority", "safe_version"
+
+**Archivo CVE**:
+```json
+[
+  {
+    "priority": "high",
+    "cve": "CVE-2026-34477",
+    "library": "org.apache.logging.log4j:log4j-core",
+    "vulnerable_version": "2.25.3",
+    "safe_version": "2.25.4",
+    "description": "The fix for CVE-2025-68161 was incomplete"
+  }
+]
+```
+
+**Comando**: `python3 cve_resolver_agent.py /ruta/proyecto --apply`
+
+**Resultado Esperado**:
+```
+✓ log4jVersion: 2.25.3 → 2.25.4
+✓ Added useVersion for org.apache.logging.log4j using ${log4jVersion}
+```
+
+**Verificación**:
+- `build.gradle`: Tiene `log4jVersion = '2.25.4'` ✅
+- `dependencyMgmt.gradle`: Tiene bloque useVersion para `org.apache.logging.log4j` ✅
+
+**Estado**: ✅ PASSED
+
+---
+
+### Escenario 43: Parseo de Library en Formato "group:name"
+
+**Objetivo**: Verificar que el agente parsea correctamente el campo "library" en formato "group:name"
+
+**Archivo CVE**:
+```json
+[
+  {
+    "cve": "CVE-TEST",
+    "library": "io.netty:netty-codec-http",
+    "safe_version": "4.1.132.Final"
+  }
+]
+```
+
+**Resultado Esperado**:
+- `group` = "io.netty"
+- `library_name` = "netty-codec-http"
+- Se crea variable `nettyVersion`
+
+**Estado**: ✅ PASSED
+
+---
+
+### Escenario 44: Múltiples CVEs del Mismo Grupo en Formato Array
+
+**Objetivo**: Verificar que los CVEs del mismo grupo se consolidan correctamente en formato array
+
+**Archivo CVE**:
+```json
+[
+  {
+    "priority": "high",
+    "cve": "CVE-2026-34477",
+    "library": "org.apache.logging.log4j:log4j-core",
+    "safe_version": "2.25.4"
+  },
+  {
+    "priority": "critical",
+    "cve": "CVE-2026-34478",
+    "library": "org.apache.logging.log4j:log4j-api",
+    "safe_version": "2.25.4"
+  }
+]
+```
+
+**Resultado Esperado**:
+- Una sola variable `log4jVersion = '2.25.4'`
+- El CVE más crítico (CVE-2026-34478) se reporta en el because
+
+**Estado**: ✅ PASSED
+
+---
+
 ## Archivos de Prueba
 
 ### test_scenarios.json
@@ -1516,3 +1608,8 @@ Contiene 10 escenarios de prueba predefinidos para validación automática.
 Ubicación: `cve_resolver_agent/test_rollback.json`
 
 CVE con versión inexistente (9.9.999.Final) para probar rollback.
+
+### example_cves_array.json
+Ubicación: `cve_resolver_agent/example_cves_array.json`
+
+Ejemplo de CVEs en formato array directo con los CVEs de Apache Log4j.

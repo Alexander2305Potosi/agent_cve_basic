@@ -45,12 +45,22 @@ ms_upload_documents/
 ## 2. Validación de CVEs
 
 ### 2.1 Campos Obligatorios
+
+**Formato Snyk:**
 | Campo | Validación | Acción si inválido |
 |-------|------------|-------------------|
 | `cve_id` | No vacío, formato CVE-XXXX-NNNNN | Omitir con advertencia |
 | `fixed_version` | No vacío | Omitir con advertencia |
 | `group` | Presente en VERSION_MAP | Ignorar silenciosamente |
 | `library_name` | Requerido para Apache Commons | Usar valor proporcionado |
+
+**Formato Array Directo:**
+| Campo | Validación | Acción si inválido |
+|-------|------------|-------------------|
+| `cve` | No vacío, formato CVE-XXXX-NNNNN | Omitir con advertencia |
+| `safe_version` | No vacío | Omitir con advertencia |
+| `library` | Formato "group:name" | Extraer grupo y nombre |
+| `priority` | Mapeado a severity | Usar UNKNOWN si no existe |
 
 ### 2.2 Versiones Problemáticas
 | Patrón | Mensaje | Acción |

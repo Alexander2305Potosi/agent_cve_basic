@@ -292,6 +292,62 @@ class TestSnykCVEProcessor(unittest.TestCase):
         self.assertEqual(cves[1].cve_id, "CVE-MED")
         self.assertEqual(cves[2].cve_id, "CVE-LOW")
 
+    def test_load_array_format_cves(self):
+        """Carga CVEs desde formato array directo"""
+        data = [
+            {
+                "priority": "high",
+                "cve": "CVE-2026-34477",
+                "library": "org.apache.logging.log4j:log4j-core",
+                "vulnerable_version": "2.25.3",
+                "safe_version": "2.25.4",
+                "description": "The fix for CVE-2025-68161 was incomplete"
+            }
+        ]
+        cve_file = self.create_cve_file(data)
+        processor = SnykCVEProcessor(cve_file)
+        cves = processor.load_cves()
+
+        self.assertEqual(len(cves), 1)
+        self.assertEqual(cves[0].cve_id, "CVE-2026-34477")
+        self.assertEqual(cves[0].group, "org.apache.logging.log4j")
+        self.assertEqual(cves[0].library_name, "log4j-core")
+        self.assertEqual(cves[0].fixed_version, "2.25.4")
+        self.assertEqual(cves[0].current_version, "2.25.3")
+        self.assertEqual(cves[0].severity, "HIGH")
+
+    def test_parse_library_with_colon(self):
+        """Parsea library en formato 'group:name'"""
+        data = [
+            {
+                "cve": "CVE-2026-34478",
+                "library": "io.netty:netty-codec-http",
+                "safe_version": "4.1.132.Final"
+            }
+        ]
+        cve_file = self.create_cve_file(data)
+        processor = SnykCVEProcessor(cve_file)
+        cves = processor.load_cves()
+
+        self.assertEqual(cves[0].group, "io.netty")
+        self.assertEqual(cves[0].library_name, "netty-codec-http")
+
+    def test_array_format_priority_normalization(self):
+        """Normaliza priority a severity en formato array"""
+        data = [
+            {"cve": "CVE-1", "library": "test:lib", "safe_version": "1.0", "priority": "critical"},
+            {"cve": "CVE-2", "library": "test:lib", "safe_version": "1.0", "priority": "HIGH"},
+            {"cve": "CVE-3", "library": "test:lib", "safe_version": "1.0"}
+        ]
+        cve_file = self.create_cve_file(data)
+        processor = SnykCVEProcessor(cve_file)
+        cves = processor.load_cves()
+
+        severities = [c.severity for c in cves]
+        self.assertIn("CRITICAL", severities)
+        self.assertIn("HIGH", severities)
+        self.assertIn("UNKNOWN", severities)
+
 
 class TestBackupManager(unittest.TestCase):
     """Tests para BackupManager"""

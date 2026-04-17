@@ -9,7 +9,7 @@ Arquitectura:
 - Una variable por grupo de librerías (consolidado)
 - Validación automática por compilación
 - Rollback automático si la compilación falla
-- Soporta formato Snyk JSON
+- Soporta formato Snyk JSON y formato Array Directo
 
 Uso:
     # Procesar un solo microservicio
@@ -142,7 +142,12 @@ class SnykCVEProcessor:
         self.cve_file_path = cve_file_path
 
     def load_cves(self) -> List[CVEEntry]:
-        """Carga CVEs desde archivo JSON con validaciones."""
+        """Carga CVEs desde archivo JSON con validaciones.
+
+        Soporta dos formatos:
+        1. Formato Snyk (original): {"cves": [{"cve_id": "...", "group": "...", ...}]}
+        2. Formato array directo: [{"cve": "...", "library": "group:name", ...}]
+        """
         if not self.cve_file_path.exists():
             raise FileNotFoundError(f"Archivo CVE no encontrado: {self.cve_file_path}")
 
@@ -165,13 +170,49 @@ class SnykCVEProcessor:
         seen = set()
         skipped = []
 
-        for item in data.get('cves', []):
-            cve_id = item.get('cve_id', '').strip()
-            fixed_version = item.get('fixed_version', '').strip()
+        # Detectar formato
+        cve_items = []
+        if isinstance(data, list):
+            # Formato array directo
+            cve_items = data
+        elif isinstance(data, dict) and 'cves' in data:
+            # Formato Snyk
+            cve_items = data.get('cves', [])
+        else:
+            raise ValueError(f"Formato JSON no reconocido. Se esperaba un array o un objeto con campo 'cves'")
+
+        for item in cve_items:
+            # Detectar si es formato array (nuevo) o formato Snyk (original)
+            if 'cve' in item or 'library' in item:
+                # Formato array directo
+                cve_id = item.get('cve', '').strip()
+                fixed_version = item.get('safe_version', '').strip()
+                library_full = item.get('library', '')
+                priority = item.get('priority', 'UNKNOWN').upper()
+
+                # Parsear library (formato: "group:name")
+                if ':' in library_full:
+                    parts = library_full.split(':')
+                    group = parts[0]
+                    library_name = parts[1] if len(parts) > 1 else ''
+                else:
+                    group = ''
+                    library_name = library_full
+
+                # Versión vulnerable (puede ser un rango como "2.21.0 - 2.25.3" o "up to 2.25.3")
+                current_version = item.get('vulnerable_version', '')
+            else:
+                # Formato Snyk original
+                cve_id = item.get('cve_id', '').strip()
+                fixed_version = item.get('fixed_version', '').strip()
+                group = item.get('group', '')
+                library_name = item.get('library_name', '')
+                priority = item.get('severity', 'UNKNOWN').upper()
+                current_version = item.get('current_version', '')
 
             # Validar campos requeridos
             if not cve_id:
-                skipped.append(('Sin CVE ID', item.get('library_name', 'unknown')))
+                skipped.append(('Sin CVE ID', library_name or 'unknown'))
                 continue
 
             if not fixed_version:
@@ -183,16 +224,16 @@ class SnykCVEProcessor:
             if version_warning:
                 print(f"   ⚠️  Advertencia en {cve_id}: {version_warning}")
 
-            # Normalizar severidad a mayúsculas
-            severity = item.get('severity', 'UNKNOWN').upper()
+            # Normalizar severidad/prioridad a mayúsculas
+            severity = priority
             if severity not in self.SEVERITY_ORDER:
                 severity = 'UNKNOWN'
 
             cve = CVEEntry(
                 cve_id=cve_id,
-                library_name=item.get('library_name', ''),
-                group=item.get('group', ''),
-                current_version=item.get('current_version', ''),
+                library_name=library_name,
+                group=group,
+                current_version=current_version,
                 fixed_version=fixed_version,
                 severity=severity
             )

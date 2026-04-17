@@ -354,9 +354,11 @@ Cambios     Automático
     Resultado
 ```
 
-## Formato de Entrada CVE (Formato Snyk)
+## Formato de Entrada CVE
 
-### JSON Format
+El agente soporta **dos formatos** de entrada CVE:
+
+### Formato 1: Snyk (Objeto con campo "cves")
 
 ```json
 {
@@ -365,7 +367,6 @@ Cambios     Automático
       "cve_id": "CVE-2026-33871",
       "library_name": "netty-codec-http2",
       "group": "io.netty",
-      "full_library": "io.netty:netty-codec-http2",
       "current_version": "4.1.86.Final",
       "fixed_version": "4.1.132.Final",
       "severity": "CRITICAL",
@@ -375,14 +376,35 @@ Cambios     Automático
 }
 ```
 
-### Campos Requeridos
-
-- `cve_id`: Identificador del CVE (ej: CVE-2026-33871) - **Obligatorio**
-- `library_name`: Nombre de la librería afectada
+**Campos:**
+- `cve_id`: Identificador del CVE - **Obligatorio**
+- `library_name`: Nombre de la librería
 - `group`: Grupo de la librería (ej: io.netty)
 - `current_version`: Versión vulnerable actual
 - `fixed_version`: Versión que corrige el CVE - **Obligatorio**
 - `severity` (opcional): CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+
+### Formato 2: Array Directo (Nuevo)
+
+```json
+[
+  {
+    "priority": "high",
+    "cve": "CVE-2026-34477",
+    "library": "org.apache.logging.log4j:log4j-core",
+    "vulnerable_version": "2.25.3",
+    "safe_version": "2.25.4",
+    "description": "The fix for CVE-2025-68161 was incomplete"
+  }
+]
+```
+
+**Campos:**
+- `cve`: Identificador del CVE - **Obligatorio**
+- `library`: Librería en formato `"group:name"` (ej: `org.apache.logging.log4j:log4j-core`)
+- `vulnerable_version`: Versión vulnerable (puede incluir rangos como "2.21.0 - 2.25.3" o "up to 2.25.3")
+- `safe_version`: Versión segura - **Obligatorio**
+- `priority` (opcional): critical, high, medium, low (mapeado a severity)
 - `description` (opcional): Descripción del CVE
 
 ## Flujo de Trabajo
@@ -694,6 +716,7 @@ Y continuará con el procesamiento normal.
 - **Modo Debug**: Argumento `--debug` para mostrar información detallada de diagnóstico
 - **Soporte Windows**: Manejo correcto de rutas con espacios, soporte para `gradlew.bat`, detección automática de Java en ubicaciones comunes de Windows
 - **Gradle Moderno**: Actualiza automáticamente `configurations.all` a `configurations.configureEach` en dependencyMgmt.gradle
+- **Soporte Múltiples Formatos CVE**: Soporta formato Snyk JSON (con campo "cves") y formato Array Directo (con campos "cve", "library", "priority", "safe_version")
 
 ## Solución de Problemas
 

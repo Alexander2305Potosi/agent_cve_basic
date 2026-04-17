@@ -1,0 +1,26 @@
+[
+  {
+    "priority": "high",
+    "cve": "CVE-2026-34477",
+    "library": "org.apache.logging.log4j:log4j-core",
+    "vulnerable_version": "2.25.3",
+    "safe_version": "2.25.4",
+    "description": "The fix for CVE-2025-68161 was incomplete: it addressed hostname verification only when enabled."
+  },
+  {
+    "priority": "high",
+    "cve": "CVE-2026-34478",
+    "library": "org.apache.logging.log4j:log4j-core",
+    "vulnerable_version": "2.21.0 - 2.25.3",
+    "safe_version": "2.25.4",
+    "description": "Apache Log4j Core's Rfc5424Layout is vulnerable to potential issues in versions 2.21.0 through 2.25.3."
+  },
+  {
+    "priority": "high",
+    "cve": "CVE-2026-34480",
+    "library": "org.apache.logging.log4j:log4j-core",
+    "vulnerable_version": "up to 2.25.3",
+    "safe_version": "2.25.4",
+    "description": "Apache Log4j Core's XmlLayout fails to properly sanitize input in versions up to and including 2.25.3."
+  }
+]
