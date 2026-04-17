@@ -1,0 +1,417 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<con:soapui-project id="document-service-mock" activeEnvironment="Default"
+    name="External Document Service Mock"
+    resourceRoot="${projectDir}"
+    soapui-version="5.7.2"
+    xmlns:con="http://eviware.com/soapui/config">
+
+    <con:settings/>
+
+    <!-- Interface Definition -->
+    <con:interface name="DocumentServicePortType"
+        id="interface-1"
+        definition="${projectDir}/../src/main/resources/wsdl/external-document-service.wsdl">
+
+        <con:settings/>
+
+        <!-- Submit Document Operation -->
+        <con:operation id="op-submit-document"
+            name="SubmitDocument"
+            bindingOperationName="SubmitDocument"
+            type="Request-Response"
+            outputName="SubmitDocumentResponse"
+            inputName="SubmitDocumentRequest"
+            receivesAttachments="false"
+            sendsAttachments="false"
+            anonymous="optional">
+
+            <con:settings/>
+
+            <con:call name="Success Response" id="call-success">
+                <con:settings/>
+                <con:encoding>UTF-8</con:encoding>
+                <con:endpoint>http://localhost:8081/ws/documents</con:endpoint>
+                <con:request>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentSubmissionResponse>
+         <doc:ResponseHeader>
+            <doc:Success>true</doc:Success>
+            <doc:Timestamp>2024-04-16T14:30:00Z</doc:Timestamp>
+         </doc:ResponseHeader>
+         <doc:ConfirmationData>
+            <doc:ExternalDocumentId>EXT-${=java.util.UUID.randomUUID().toString()}</doc:ExternalDocumentId>
+            <doc:ConfirmationCode>CNF-${=System.currentTimeMillis()}</doc:ConfirmationCode>
+            <doc:ConfirmationMessage>Document received and validated successfully</doc:ConfirmationMessage>
+            <doc:ProcessingStatus>PENDING_REVIEW</doc:ProcessingStatus>
+         </doc:ConfirmationData>
+      </doc:DocumentSubmissionResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:request>
+                <con:credentials>
+                    <con:authType>No Authorization</con:authType>
+                </con:credentials>
+                <con:jmsConfig>
+                    <con:jmsProperties/>
+                </con:jmsConfig>
+                <con:jmsPropertyConfig>
+                    <con:jmsProperties/>
+                </con:jmsPropertyConfig>
+                <con:wsaConfig>
+                    <con:mustUnderstand>None</con:mustUnderstand>
+                </con:wsaConfig>
+            </con:call>
+
+            <con:call name="Error Response - Invalid Document" id="call-error-invalid">
+                <con:settings/>
+                <con:encoding>UTF-8</con:encoding>
+                <con:endpoint>http://localhost:8081/ws/documents</con:endpoint>
+                <con:request>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentSubmissionResponse>
+         <doc:ResponseHeader>
+            <doc:Success>false</doc:Success>
+            <doc:Timestamp>2024-04-16T14:30:00Z</doc:Timestamp>
+            <doc:Errors>
+               <doc:Error>
+                  <doc:ErrorCode>DOC_001</doc:ErrorCode>
+                  <doc:ErrorMessage>Invalid document format</doc:ErrorMessage>
+                  <doc:ErrorDetail>The document content does not match the declared content type</doc:ErrorDetail>
+               </doc:Error>
+            </doc:Errors>
+         </doc:ResponseHeader>
+      </doc:DocumentSubmissionResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:request>
+                <con:credentials>
+                    <con:authType>No Authorization</con:authType>
+                </con:credentials>
+            </con:call>
+
+            <con:call name="Error Response - Service Unavailable" id="call-error-unavailable">
+                <con:settings/>
+                <con:encoding>UTF-8</con:encoding>
+                <con:endpoint>http://localhost:8081/ws/documents</con:endpoint>
+                <con:request>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentSubmissionResponse>
+         <doc:ResponseHeader>
+            <doc:Success>false</doc:Success>
+            <doc:Timestamp>2024-04-16T14:30:00Z</doc:Timestamp>
+            <doc:Errors>
+               <doc:Error>
+                  <doc:ErrorCode>SYS_503</doc:ErrorCode>
+                  <doc:ErrorMessage>Service temporarily unavailable</doc:ErrorMessage>
+                  <doc:ErrorDetail>Please retry after 60 seconds</doc:ErrorDetail>
+               </doc:Error>
+            </doc:Errors>
+         </doc:ResponseHeader>
+      </doc:DocumentSubmissionResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:request>
+                <con:credentials>
+                    <con:authType>No Authorization</con:authType>
+                </con:credentials>
+            </con:call>
+        </con:operation>
+
+        <!-- Get Document Status Operation -->
+        <con:operation id="op-get-status"
+            name="GetDocumentStatus"
+            bindingOperationName="GetDocumentStatus"
+            type="Request-Response">
+
+            <con:settings/>
+
+            <con:call name="Status Response" id="call-status">
+                <con:settings/>
+                <con:encoding>UTF-8</con:encoding>
+                <con:endpoint>http://localhost:8081/ws/documents</con:endpoint>
+                <con:request>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentStatusResponse>
+         <doc:ResponseHeader>
+            <doc:Success>true</doc:Success>
+            <doc:Timestamp>2024-04-16T14:30:00Z</doc:Timestamp>
+         </doc:ResponseHeader>
+         <doc:StatusData>
+            <doc:ExternalDocumentId>EXT-12345</doc:ExternalDocumentId>
+            <doc:CurrentStatus>APPROVED</doc:CurrentStatus>
+            <doc:StatusDescription>Document has been reviewed and approved</doc:StatusDescription>
+            <doc:LastUpdateTimestamp>2024-04-16T14:35:00Z</doc:LastUpdateTimestamp>
+         </doc:StatusData>
+      </doc:DocumentStatusResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:request>
+            </con:call>
+        </con:operation>
+    </con:interface>
+
+    <!-- Mock Service -->
+    <con:mockService id="mock-1"
+        name="DocumentServiceMock"
+        port="8081"
+        path="/ws/documents"
+        host="localhost">
+
+        <con:settings/>
+        <con:properties>
+            <!-- Contador de reintentos para pruebas de retry -->
+            <con:property>
+                <con:name>REQUEST_COUNT</con:name>
+                <con:value>0</con:value>
+            </con:property>
+        </con:properties>
+
+        <!-- Mock Action for SubmitDocument -->
+        <con:mockAction name="SubmitDocument"
+            operation="SubmitDocument"
+            interface="DocumentServicePortType">
+
+            <con:settings/>
+
+            <!-- Dispatch basado en DocumentType -->
+            <con:dispatchConfig>
+                <con:dispatchPath>//doc:DocumentSubmissionRequest/doc:DocumentData/doc:DocumentType</con:dispatchPath>
+                <con:dispatchStyle>QUERY_MATCH</con:dispatchStyle>
+            </con:dispatchConfig>
+
+            <!-- Mock Response - Success (INV = Invoice) -->
+            <con:mockResponse name="Success Response" id="mock-success"
+                encoding="UTF-8"
+                httpStatusCode="200">
+                <con:settings/>
+                <con:content>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentSubmissionResponse>
+         <doc:ResponseHeader>
+            <doc:Success>true</doc:Success>
+            <doc:Timestamp>${=java.time.LocalDateTime.now().toString()}</doc:Timestamp>
+         </doc:ResponseHeader>
+         <doc:ConfirmationData>
+            <doc:ExternalDocumentId>EXT-${=java.util.UUID.randomUUID().toString().substring(0,8)}</doc:ExternalDocumentId>
+            <doc:ConfirmationCode>CNF-${=System.currentTimeMillis()}</doc:ConfirmationCode>
+            <doc:ConfirmationMessage>Document received and validated successfully</doc:ConfirmationMessage>
+            <doc:ProcessingStatus>PENDING_REVIEW</doc:ProcessingStatus>
+         </doc:ConfirmationData>
+      </doc:DocumentSubmissionResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:content>
+                <con:dispatchPath>//doc:DocumentSubmissionRequest/doc:DocumentData/doc:DocumentType[text()='INV']</con:dispatchPath>
+                <con:dispatchStyle>QUERY_MATCH</con:dispatchStyle>
+            </con:mockResponse>
+
+            <!-- Mock Response - Permanent Error (ERR = Error) -->
+            <con:mockResponse name="Error Response" id="mock-error"
+                encoding="UTF-8"
+                httpStatusCode="200">
+                <con:settings/>
+                <con:content>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentSubmissionResponse>
+         <doc:ResponseHeader>
+            <doc:Success>false</doc:Success>
+            <doc:Timestamp>${=java.time.LocalDateTime.now().toString()}</doc:Timestamp>
+            <doc:Errors>
+               <doc:Error>
+                  <doc:ErrorCode>DOC_001</doc:ErrorCode>
+                  <doc:ErrorMessage>Invalid document format</doc:ErrorMessage>
+               </doc:Error>
+            </doc:Errors>
+         </doc:ResponseHeader>
+      </doc:DocumentSubmissionResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:content>
+                <con:dispatchPath>//doc:DocumentSubmissionRequest/doc:DocumentData/doc:DocumentType[text()='ERR']</con:dispatchPath>
+                <con:dispatchStyle>QUERY_MATCH</con:dispatchStyle>
+            </con:mockResponse>
+
+            <!-- Mock Response - Timeout Simulation (TMO = Timeout) -->
+            <!-- Retrasa la respuesta 35 segundos para forzar timeout del cliente -->
+            <con:mockResponse name="Timeout Response" id="mock-timeout"
+                encoding="UTF-8"
+                httpStatusCode="200"
+                delay="35000">
+                <con:settings/>
+                <con:content>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentSubmissionResponse>
+         <doc:ResponseHeader>
+            <doc:Success>false</doc:Success>
+            <doc:Timestamp>${=java.time.LocalDateTime.now().toString()}</doc:Timestamp>
+            <doc:Errors>
+               <doc:Error>
+                  <doc:ErrorCode>SYS_504</doc:ErrorCode>
+                  <doc:ErrorMessage>Gateway Timeout</doc:ErrorMessage>
+               </doc:Error>
+            </doc:Errors>
+         </doc:ResponseHeader>
+      </doc:DocumentSubmissionResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:content>
+                <con:dispatchPath>//doc:DocumentSubmissionRequest/doc:DocumentData/doc:DocumentType[text()='TMO']</con:dispatchPath>
+                <con:dispatchStyle>QUERY_MATCH</con:dispatchStyle>
+            </con:mockResponse>
+
+            <!-- Mock Response - Flaky Service (FLK = Flaky) -->
+            <!-- Simula servicio intermitente: falla 2 veces, éxito en la 3ra -->
+            <con:mockResponse name="Flaky Response" id="mock-flaky"
+                encoding="UTF-8"
+                httpStatusCode="503">
+                <con:settings/>
+                <con:content>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentSubmissionResponse>
+         <doc:ResponseHeader>
+            <doc:Success>false</doc:Success>
+            <doc:Timestamp>${=java.time.LocalDateTime.now().toString()}</doc:Timestamp>
+            <doc:Errors>
+               <doc:Error>
+                  <doc:ErrorCode>SYS_503</doc:ErrorCode>
+                  <doc:ErrorMessage>Service temporarily unavailable</doc:ErrorMessage>
+               </doc:Error>
+            </doc:Errors>
+         </doc:ResponseHeader>
+      </doc:DocumentSubmissionResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:content>
+                <con:dispatchPath>//doc:DocumentSubmissionRequest/doc:DocumentData/doc:DocumentType[text()='FLK']</con:dispatchPath>
+                <con:dispatchStyle>QUERY_MATCH</con:dispatchStyle>
+            </con:mockResponse>
+
+            <!-- Mock Response - Server Error (SRV = Server Error) -->
+            <!-- HTTP 500 para simular error interno del servidor -->
+            <con:mockResponse name="Server Error" id="mock-server-error"
+                encoding="UTF-8"
+                httpStatusCode="500">
+                <con:settings/>
+                <con:content>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <soapenv:Fault>
+         <faultcode>soapenv:Server</faultcode>
+         <faultstring>Internal Server Error</faultstring>
+      </soapenv:Fault>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:content>
+                <con:dispatchPath>//doc:DocumentSubmissionRequest/doc:DocumentData/doc:DocumentType[text()='SRV']</con:dispatchPath>
+                <con:dispatchStyle>QUERY_MATCH</con:dispatchStyle>
+            </con:mockResponse>
+
+            <!-- Mock Response - Connection Refused Simulation (REF = Refused) -->
+            <!-- Cierra la conexión abruptamente para simular connection refused -->
+            <con:mockResponse name="Connection Refused" id="mock-refused"
+                encoding="UTF-8"
+                httpStatusCode="000"
+                responseType="io.fabric8:CloseConnection">
+                <con:settings/>
+                <con:content></con:content>
+                <con:dispatchPath>//doc:DocumentSubmissionRequest/doc:DocumentData/doc:DocumentType[text()='REF']</con:dispatchPath>
+                <con:dispatchStyle>QUERY_MATCH</con:dispatchStyle>
+            </con:mockResponse>
+
+            <!-- Mock Response - Random Flaky (RND = Random) -->
+            <!-- 50% éxito, 50% error - para probar comportamiento aleatorio -->
+            <con:mockResponse name="Random Response" id="mock-random"
+                encoding="UTF-8"
+                httpStatusCode="200">
+                <con:settings/>
+                <con:content>
+<![CDATA[
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:doc="http://supplier.com/document-service">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <doc:DocumentSubmissionResponse>
+         <doc:ResponseHeader>
+            <doc:Success>${=Math.random() > 0.5 ? 'true' : 'false'}</doc:Success>
+            <doc:Timestamp>${=java.time.LocalDateTime.now().toString()}</doc:Timestamp>
+            ${=Math.random() > 0.5 ? '' : '<doc:Errors><doc:Error><doc:ErrorCode>SYS_500</doc:ErrorCode><doc:ErrorMessage>Random failure</doc:ErrorMessage></doc:Error></doc:Errors>'}
+         </doc:ResponseHeader>
+         <doc:ConfirmationData>
+            <doc:ExternalDocumentId>EXT-${=java.util.UUID.randomUUID().toString().substring(0,8)}</doc:ExternalDocumentId>
+            <doc:ConfirmationCode>CNF-${=System.currentTimeMillis()}</doc:ConfirmationCode>
+            <doc:ConfirmationMessage>${=Math.random() > 0.5 ? 'Success' : 'Failed'}</doc:ConfirmationMessage>
+            <doc:ProcessingStatus>${=Math.random() > 0.5 ? 'PENDING_REVIEW' : 'FAILED'}</doc:ProcessingStatus>
+         </doc:ConfirmationData>
+      </doc:DocumentSubmissionResponse>
+   </soapenv:Body>
+</soapenv:Envelope>
+]]>
+                </con:content>
+                <con:dispatchPath>//doc:DocumentSubmissionRequest/doc:DocumentData/doc:DocumentType[text()='RND']</con:dispatchPath>
+                <con:dispatchStyle>QUERY_MATCH</con:dispatchStyle>
+            </con:mockResponse>
+
+        </con:mockAction>
+    </con:mockService>
+
+    <!-- Properties -->
+    <con:properties>
+        <!-- Configuración del mock -->
+        <con:property>
+            <con:name>MOCK_TIMEOUT_DELAY_MS</con:name>
+            <con:value>35000</con:value>
+        </con:property>
+        <con:property>
+            <con:name>MOCK_FLAKY_FAILURES</con:name>
+            <con:value>2</con:value>
+        </con:property>
+    </con:properties>
+
+    <con:afterLoadScript/>
+    <con:beforeSaveScript/>
+
+</con:soapui-project>

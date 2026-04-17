@@ -1,0 +1,104 @@
+{
+  "cves": [
+    {
+      "cve_id": "CVE-2026-33870",
+      "library_name": "netty-codec-http",
+      "group": "io.netty",
+      "full_library": "io.netty:netty-codec-http",
+      "current_version": "4.1.86.Final",
+      "fixed_version": "4.1.132.Final",
+      "severity": "HIGH",
+      "description": "Snyk reported vulnerability: CVE-2026-33870"
+    },
+    {
+      "cve_id": "CVE-2026-33871",
+      "library_name": "netty-codec-http2",
+      "group": "io.netty",
+      "full_library": "io.netty:netty-codec-http2",
+      "current_version": "4.1.86.Final",
+      "fixed_version": "4.1.132.Final",
+      "severity": "CRITICAL",
+      "description": "Snyk reported vulnerability: CVE-2026-33871"
+    },
+    {
+      "cve_id": "CVE-2026-44123",
+      "library_name": "netty-handler",
+      "group": "io.netty",
+      "full_library": "io.netty:netty-handler",
+      "current_version": "4.1.86.Final",
+      "fixed_version": "4.1.132.Final",
+      "severity": "HIGH",
+      "description": "Snyk reported vulnerability: CVE-2026-44123"
+    },
+    {
+      "cve_id": "CVE-2024-38820",
+      "library_name": "spring-web",
+      "group": "org.springframework",
+      "full_library": "org.springframework:spring-web",
+      "current_version": "6.1.5",
+      "fixed_version": "6.1.14",
+      "severity": "HIGH",
+      "description": "Snyk reported vulnerability: CVE-2024-38820 - Spring Framework DoS"
+    },
+    {
+      "cve_id": "CVE-2024-38821",
+      "library_name": "spring-core",
+      "group": "org.springframework",
+      "full_library": "org.springframework:spring-core",
+      "current_version": "6.1.5",
+      "fixed_version": "6.1.14",
+      "severity": "MEDIUM",
+      "description": "Snyk reported vulnerability: CVE-2024-38821 - Spring Framework issue"
+    },
+    {
+      "cve_id": "CVE-2024-22233",
+      "library_name": "jackson-databind",
+      "group": "com.fasterxml.jackson.core",
+      "full_library": "com.fasterxml.jackson.core:jackson-databind",
+      "current_version": "2.16.1",
+      "fixed_version": "2.17.2",
+      "severity": "CRITICAL",
+      "description": "Snyk reported vulnerability: CVE-2024-22233 - Jackson Databind RCE"
+    },
+    {
+      "cve_id": "CVE-2024-22234",
+      "library_name": "jackson-core",
+      "group": "com.fasterxml.jackson.core",
+      "full_library": "com.fasterxml.jackson.core:jackson-core",
+      "current_version": "2.16.1",
+      "fixed_version": "2.17.2",
+      "severity": "HIGH",
+      "description": "Snyk reported vulnerability: CVE-2024-22234 - Jackson Core issue"
+    },
+    {
+      "cve_id": "CVE-2024-26308",
+      "library_name": "commons-compress",
+      "group": "org.apache.commons",
+      "full_library": "org.apache.commons:commons-compress",
+      "current_version": "1.26.1",
+      "fixed_version": "1.27.1",
+      "severity": "HIGH",
+      "description": "Snyk reported vulnerability: CVE-2024-26308 - Apache Commons Compress"
+    },
+    {
+      "cve_id": "CVE-2024-45105",
+      "library_name": "log4j-core",
+      "group": "org.apache.logging.log4j",
+      "full_library": "org.apache.logging.log4j:log4j-core",
+      "current_version": "2.23.1",
+      "fixed_version": "2.24.1",
+      "severity": "MEDIUM",
+      "description": "Snyk reported vulnerability: CVE-2024-45105 - Log4j Core"
+    },
+    {
+      "cve_id": "CVE-2024-34148",
+      "library_name": "log4j-api",
+      "group": "org.apache.logging.log4j",
+      "full_library": "org.apache.logging.log4j:log4j-api",
+      "current_version": "2.23.1",
+      "fixed_version": "2.24.1",
+      "severity": "LOW",
+      "description": "Snyk reported vulnerability: CVE-2024-34148 - Log4j API"
+    }
+  ]
+}

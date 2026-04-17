@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: ms-auth
+  profiles:
+    active: local
+
+server:
+  port: 8081
+
+logging:
+  level:
+    root: INFO
+    com.supplier.documents: DEBUG

@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="http://supplier.com/document-service"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             name="DocumentService"
+             targetNamespace="http://supplier.com/document-service">
+
+    <!-- Types Schema -->
+    <types>
+        <xsd:schema targetNamespace="http://supplier.com/document-service"
+                    elementFormDefault="qualified"
+                    xmlns:tns="http://supplier.com/document-service">
+
+            <!-- Request Header -->
+            <xsd:complexType name="RequestHeader">
+                <xsd:sequence>
+                    <xsd:element name="TransactionId" type="xsd:string"/>
+                    <xsd:element name="Timestamp" type="xsd:string"/>
+                    <xsd:element name="SourceSystem" type="xsd:string"/>
+                    <xsd:element name="OperationType" type="xsd:string"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Response Header -->
+            <xsd:complexType name="ResponseHeader">
+                <xsd:sequence>
+                    <xsd:element name="Success" type="xsd:boolean"/>
+                    <xsd:element name="Timestamp" type="xsd:string"/>
+                    <xsd:element name="Errors" type="tns:ErrorList" minOccurs="0"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Error Types -->
+            <xsd:complexType name="ErrorList">
+                <xsd:sequence>
+                    <xsd:element name="Error" type="tns:ErrorType" maxOccurs="unbounded"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <xsd:complexType name="ErrorType">
+                <xsd:sequence>
+                    <xsd:element name="ErrorCode" type="xsd:string"/>
+                    <xsd:element name="ErrorMessage" type="xsd:string"/>
+                    <xsd:element name="ErrorDetail" type="xsd:string" minOccurs="0"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Document Data -->
+            <xsd:complexType name="DocumentData">
+                <xsd:sequence>
+                    <xsd:element name="DocumentId" type="xsd:string"/>
+                    <xsd:element name="FileName" type="xsd:string"/>
+                    <xsd:element name="DocumentType" type="xsd:string"/>
+                    <xsd:element name="FileSize" type="xsd:long"/>
+                    <xsd:element name="ContentType" type="xsd:string"/>
+                    <xsd:element name="Content" type="xsd:string"/>
+                    <xsd:element name="Checksum" type="xsd:string"/>
+                    <xsd:element name="UploadTimestamp" type="xsd:string"/>
+                    <xsd:element name="UploadedBy" type="xsd:string" minOccurs="0"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Metadata -->
+            <xsd:complexType name="MetadataList">
+                <xsd:sequence>
+                    <xsd:element name="MetadataItem" type="tns:MetadataItem" maxOccurs="unbounded"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <xsd:complexType name="MetadataItem">
+                <xsd:sequence>
+                    <xsd:element name="Key" type="xsd:string"/>
+                    <xsd:element name="Value" type="xsd:string"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Confirmation Data -->
+            <xsd:complexType name="ConfirmationData">
+                <xsd:sequence>
+                    <xsd:element name="ExternalDocumentId" type="xsd:string"/>
+                    <xsd:element name="ConfirmationCode" type="xsd:string"/>
+                    <xsd:element name="ConfirmationMessage" type="xsd:string" minOccurs="0"/>
+                    <xsd:element name="ProcessingStatus" type="xsd:string"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Status Data -->
+            <xsd:complexType name="StatusData">
+                <xsd:sequence>
+                    <xsd:element name="ExternalDocumentId" type="xsd:string"/>
+                    <xsd:element name="CurrentStatus" type="xsd:string"/>
+                    <xsd:element name="StatusDescription" type="xsd:string" minOccurs="0"/>
+                    <xsd:element name="LastUpdateTimestamp" type="xsd:string"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Submit Document Request -->
+            <xsd:element name="DocumentSubmissionRequest">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="Header" type="tns:RequestHeader"/>
+                        <xsd:element name="DocumentData" type="tns:DocumentData"/>
+                        <xsd:element name="Metadata" type="tns:MetadataList" minOccurs="0"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+            <!-- Submit Document Response -->
+            <xsd:element name="DocumentSubmissionResponse">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="ResponseHeader" type="tns:ResponseHeader"/>
+                        <xsd:element name="ConfirmationData" type="tns:ConfirmationData" minOccurs="0"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+            <!-- Get Status Request -->
+            <xsd:element name="DocumentStatusRequest">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="Header" type="tns:RequestHeader"/>
+                        <xsd:element name="ExternalDocumentId" type="xsd:string"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+            <!-- Get Status Response -->
+            <xsd:element name="DocumentStatusResponse">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="ResponseHeader" type="tns:ResponseHeader"/>
+                        <xsd:element name="StatusData" type="tns:StatusData" minOccurs="0"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+        </xsd:schema>
+    </types>
+
+    <!-- Messages -->
+    <message name="SubmitDocumentRequest">
+        <part name="request" element="tns:DocumentSubmissionRequest"/>
+    </message>
+
+    <message name="SubmitDocumentResponse">
+        <part name="response" element="tns:DocumentSubmissionResponse"/>
+    </message>
+
+    <message name="GetDocumentStatusRequest">
+        <part name="request" element="tns:DocumentStatusRequest"/>
+    </message>
+
+    <message name="GetDocumentStatusResponse">
+        <part name="response" element="tns:DocumentStatusResponse"/>
+    </message>
+
+    <!-- Port Type -->
+    <portType name="DocumentServicePortType">
+        <operation name="SubmitDocument">
+            <input message="tns:SubmitDocumentRequest"/>
+            <output message="tns:SubmitDocumentResponse"/>
+        </operation>
+
+        <operation name="GetDocumentStatus">
+            <input message="tns:GetDocumentStatusRequest"/>
+            <output message="tns:GetDocumentStatusResponse"/>
+        </operation>
+    </portType>
+
+    <!-- Binding -->
+    <binding name="DocumentServiceBinding" type="tns:DocumentServicePortType">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+
+        <operation name="SubmitDocument">
+            <soap:operation soapAction="http://supplier.com/document-service/SubmitDocument"/>
+            <input>
+                <soap:body use="literal"/>
+            </input>
+            <output>
+                <soap:body use="literal"/>
+            </output>
+        </operation>
+
+        <operation name="GetDocumentStatus">
+            <soap:operation soapAction="http://supplier.com/document-service/GetDocumentStatus"/>
+            <input>
+                <soap:body use="literal"/>
+            </input>
+            <output>
+                <soap:body use="literal"/>
+            </output>
+        </operation>
+    </binding>
+
+    <!-- Service -->
+    <service name="DocumentService">
+        <port name="DocumentServicePort" binding="tns:DocumentServiceBinding">
+            <soap:address location="http://localhost:8081/ws/documents"/>
+        </port>
+    </service>
+
+</definitions>

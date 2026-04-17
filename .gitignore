@@ -1,0 +1,92 @@
+# =============================================================================
+# CVE Resolver Agent - Ignorar archivos temporales y de ejecución
+# =============================================================================
+
+# Backups generados por el agente
+**/.cve_resolver_backups/
+**/*.backup
+
+# Reportes JSON generados por el agente
+**/cve_resolver_report.json
+**/cve_resolver_consolidated_report.json
+
+# Cache de Python
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Entornos virtuales (si se usan para el agente)
+**/venv/
+**/env/
+**/.venv/
+
+# =============================================================================
+# Monorepo supplier_documents_backend - Archivos de compilación y temporales
+# =============================================================================
+
+# Gradle
+**/.gradle/
+**/build/
+**/out/
+**/gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# Java
+**/*.class
+**/*.jar
+**/*.war
+**/*.ear
+
+# IntelliJ IDEA / Android Studio
+**/.idea/
+**/*.iws
+**/*.iml
+**/*.ipr
+
+# Eclipse
+**/.settings/
+**/.project
+**/.classpath
+
+# VS Code
+**/.vscode/
+
+# Archivos de sistema
+**/.DS_Store
+**/.AppleDouble
+**/.LSOverride
+**/Thumbs.db
+**/*.swp
+**/*.swo
+*~
+
+# Logs
+**/*.log
+**/logs/
+
+# Archivos de aplicación
+**/*.pid
+**/*.seed
+**/*.pid.lock
+
+# Variables de entorno
+**/.env
+**/.env.local
+**/.env.*.local
+**/application-local.properties
+**/application-dev.properties
+
+# =============================================================================
+# Archivos del proyecto - Ignorar directorios de configuración local
+# =============================================================================
+
+# Configuración de Claude
+.claude/
+
+# Otros
+**/target/
+**/dist/
+**/node_modules/

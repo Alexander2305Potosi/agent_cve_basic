@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: ms-reports
+  profiles:
+    active: local
+
+server:
+  port: 8084
+
+logging:
+  level:
+    root: INFO
+    com.supplier.documents: DEBUG

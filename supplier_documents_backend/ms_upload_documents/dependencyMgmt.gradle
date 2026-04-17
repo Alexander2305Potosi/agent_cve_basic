@@ -1,0 +1,26 @@
+configurations.all {
+    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+        if (details.requested.group == 'org.springframework') {
+            details.useVersion "${springFrameworkVersion}"
+            details.because "Fix: Spring Framework CVE"
+        }
+
+        if (details.requested.group == 'com.fasterxml.jackson.core') {
+            details.useVersion "${jacksonVersion}"
+            details.because "Fix: Jackson CVE"
+        }
+
+        if (details.requested.group == 'org.apache.logging.log4j') {
+            details.useVersion "${log4jVersion}"
+            details.because "Fix: Log4j CVE"
+        }
+        if (details.requested.group == 'io.netty') {
+            details.useVersion "${nettyVersion}"
+            details.because "Fix: CVE-2026-33871"
+        }
+        if (details.requested.group == 'org.apache.commons' && details.requested.name == 'commons-compress') {
+            details.useVersion "${commonsCompressVersion}"
+            details.because "Fix: CVE-2024-26308"
+        }
+    }
+}

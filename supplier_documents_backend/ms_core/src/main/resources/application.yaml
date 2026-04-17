@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: ms-core
+  profiles:
+    active: local
+
+server:
+  port: 8082
+
+logging:
+  level:
+    root: INFO
+    com.supplier.documents: DEBUG

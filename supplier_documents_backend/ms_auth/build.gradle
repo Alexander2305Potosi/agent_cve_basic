@@ -1,0 +1,118 @@
+buildscript {
+    ext {
+        // Plugin versions
+        springBootVersion = '3.2.4'
+        dependencyManagementVersion = '1.1.4'
+
+        // Dependencies versions
+        springDocVersion = '2.3.0'
+        lombokVersion = '1.18.30'
+        wiremockVersion = '3.4.2'
+        mockitoVersion = '5.10.0'
+        jacocoVersion = '0.8.11'
+        springSecurityVersion = '6.2.0'
+        jjwtVersion = '0.12.3'
+
+        // CVE fix versions (used in dependencyMgmt.gradle)
+        springFrameworkVersion = '6.1.14'
+        jacksonVersion = '2.17.2'
+        log4jVersion = '2.24.1'
+        nettyVersion = '4.1.132.Final'
+        commonsCompressVersion = '1.27.1'
+    }
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}"
+        classpath "io.spring.gradle:dependency-management-plugin:${dependencyManagementVersion}"
+    }
+}
+
+plugins {
+    id 'java'
+    id 'jacoco'
+}
+
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+apply from: 'dependencyMgmt.gradle'
+
+group = 'com.supplier.documents'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+dependencies {
+    implementation "org.springframework.boot:spring-boot-starter-webflux"
+    implementation "org.springframework.boot:spring-boot-starter-security"
+    implementation "org.springframework.boot:spring-boot-starter-validation"
+
+    // JWT Support
+    implementation "io.jsonwebtoken:jjwt-api:${jjwtVersion}"
+    runtimeOnly "io.jsonwebtoken:jjwt-impl:${jjwtVersion}"
+    runtimeOnly "io.jsonwebtoken:jjwt-jackson:${jjwtVersion}"
+
+    implementation "org.springdoc:springdoc-openapi-starter-webflux-ui:${springDocVersion}"
+
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+    testCompileOnly "org.projectlombok:lombok:${lombokVersion}"
+    testAnnotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+
+    testImplementation "org.springframework.boot:spring-boot-starter-test"
+    testImplementation "org.springframework.security:spring-security-test"
+    testImplementation "io.projectreactor:reactor-test"
+    testImplementation "org.wiremock:wiremock-standalone:${wiremockVersion}"
+    testImplementation "org.mockito:mockito-core:${mockitoVersion}"
+    testImplementation "org.mockito:mockito-junit-jupiter:${mockitoVersion}"
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+jacoco {
+    toolVersion = "${jacocoVersion}"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn jacocoTestReport
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.80
+            }
+        }
+    }
+}
+
+check.dependsOn jacocoTestCoverageVerification
