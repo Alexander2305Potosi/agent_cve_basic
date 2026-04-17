@@ -642,42 +642,51 @@ class GradleCVEUpdater:
         new_var_line = f"        {version_var} = '{cve.fixed_version}'\n"
 
         if 'buildscript {' in content:
-            # Buscar el bloque buildscript y dentro de él el bloque ext
-            # Usar un enfoque más robusto que maneje múltiples líneas
-            buildscript_match = re.search(
-                r'buildscript\s*\{',
-                content
-            )
-
+            # Buscar el bloque buildscript
+            buildscript_match = re.search(r'buildscript\s*\{', content)
             if buildscript_match:
-                # Buscar el bloque ext dentro de buildscript
-                ext_match = re.search(
-                    r'(buildscript\s*\{[\s\S]*?ext\s*\{)([\s\S]*?)(\}[\s\S]*?\})',
-                    content,
-                    re.MULTILINE
-                )
-
+                # Buscar el bloque ext dentro de buildscript usando contador de llaves
+                ext_match = re.search(r'ext\s*\{', content)
                 if ext_match:
-                    ext_start, ext_content, ext_end = ext_match.groups()
+                    # Encontrar el cierre del bloque ext usando contador de llaves
+                    start_pos = ext_match.end()
+                    brace_count = 1
+                    pos = start_pos
+                    while pos < len(content) and brace_count > 0:
+                        if content[pos] == '{':
+                            brace_count += 1
+                        elif content[pos] == '}':
+                            brace_count -= 1
+                        pos += 1
+                    # El cierre del ext está en pos-1
+                    ext_end_pos = pos - 1
+                    ext_content = content[start_pos:ext_end_pos]
+
                     if version_var not in ext_content:
-                        # Agregar variable al bloque ext existente
-                        # Encontrar la última línea del ext_content
-                        lines = ext_content.rstrip().split('\n')
-                        new_ext_content = ext_content.rstrip() + '\n' + new_var_line
-                        return content[:ext_match.start()] + ext_start + new_ext_content + ext_end + content[ext_match.end():]
+                        # Insertar nueva variable antes del cierre del ext
+                        # Preservar indentación del cierre: buscar espacios antes del '}'
+                        last_newline = content.rfind('\n', 0, ext_end_pos)
+                        if last_newline != -1:
+                            # Los espacios entre el último newline y el '}' son la indentación del cierre
+                            spaces = content[last_newline+1:ext_end_pos]
+                            # before_closure: hasta el newline (sin los espacios de indentación)
+                            # after_closure: espacios de indentación + '}' + resto
+                            before_closure = content[:last_newline+1]
+                            after_closure = spaces + content[ext_end_pos:]
+                        else:
+                            before_closure = content[:ext_end_pos]
+                            after_closure = content[ext_end_pos:]
+                        new_content = before_closure + new_var_line + after_closure
+                        return new_content
 
                 # Si no hay bloque ext, crearlo dentro de buildscript
                 # Insertar después de "buildscript {"
                 buildscript_start = buildscript_match.end()
-                ext_block = f"\n    ext {{\n{new_var_line}    }}\n"
+                ext_block = "\n    ext {\n" + new_var_line + "    }\n"
                 return content[:buildscript_start] + ext_block + content[buildscript_start:]
 
         # Crear bloque buildscript completo si no existe
-        buildscript = f"""buildscript {{
-    ext {{{new_var_line}    }}
-}}
-
-"""
+        buildscript = "buildscript {\n    ext {\n" + new_var_line + "    }\n}\n\n"
         return buildscript + content
 
     def _escape_gradle_string(self, text: str) -> str:
@@ -734,19 +743,32 @@ class GradleCVEUpdater:
             safe_cve_id = self._escape_gradle_string(cve.cve_id)
 
             # Para org.apache.commons, especificar el artifact específico
+            # Bloque con indentación consistente: 8 espacios para if/cierre, 12 para contenido
             if cve.group == 'org.apache.commons':
                 use_block = f"""\n        if (details.requested.group == '{cve.group}' && details.requested.name == '{cve.library_name}') {{
             details.useVersion "${{{version_var}}}"
             details.because "Fix: {safe_cve_id}"
-        }}"""
+        }}
+"""
             else:
                 use_block = f"""\n        if (details.requested.group == '{cve.group}') {{
             details.useVersion "${{{version_var}}}"
             details.because "Fix: {safe_cve_id}"
-        }}"""
+        }}
+"""
 
             # Insertar el bloque useVersion antes del cierre de eachDependency
-            new_content = content[:each_dep_end] + use_block + content[each_dep_end:]
+            before_closure = content[:each_dep_end]
+            after_closure = content[each_dep_end:]  # Esto es '}' + resto
+            # Preservar indentación: buscar si hay newline seguido de espacios antes del cierre
+            # Si el cierre está al inicio de línea (con indentación), necesitamos mantener esos espacios
+            last_newline = before_closure.rfind('\n')
+            if last_newline != -1:
+                spaces_after_newline = before_closure[last_newline + 1:]
+                if spaces_after_newline.strip() == '':
+                    # El cierre está al inicio de línea con indentación, preservar los espacios
+                    after_closure = spaces_after_newline + after_closure
+            new_content = before_closure + use_block + after_closure
 
             if not dry_run:
                 backup_path = self.backup_manager.create_backup(dm_file)
@@ -1248,6 +1270,23 @@ class GitCommitManager:
             return True, f"Commit creado: {hash_output}"
         else:
             return False, f"Error creando commit: {output}"
+
+    def push_branch(self, branch_name: str, remote: str = "origin") -> Tuple[bool, str]:
+        """
+        Sube la rama al repositorio remoto.
+
+        Args:
+            branch_name: Nombre de la rama a subir
+            remote: Nombre del remote (default: origin)
+
+        Returns:
+            Tuple[bool, str]: (éxito, mensaje)
+        """
+        success, output = self._run_git_command(["push", "-u", remote, branch_name])
+        if success:
+            return True, f"Rama '{branch_name}' subida a {remote}"
+        else:
+            return False, f"Error subiendo rama: {output}"
 
     def get_changed_files(self) -> List[str]:
         """Obtiene lista de archivos modificados."""
@@ -1894,8 +1933,18 @@ Ejemplos:
                         print(commit_message[:500] + "..." if len(commit_message) > 500 else commit_message)
                         print(f"{'─' * 60}")
                         print(f"\n🎉 Commit creado exitosamente en rama: {branch_name}")
-                        print(f"   Para subir los cambios:")
-                        print(f"   git push origin {branch_name}")
+
+                        # Subir rama al remote automáticamente
+                        print("\n🚀 Subiendo rama al repositorio remoto...")
+                        push_success, push_msg = git_manager.push_branch(branch_name)
+                        if push_success:
+                            print(f"   ✅ {push_msg}")
+                            print(f"\n📋 Rama lista para revisión:")
+                            print(f"   {branch_name}")
+                        else:
+                            print(f"   ⚠️  {push_msg}")
+                            print(f"   Para subir manualmente:")
+                            print(f"   git push origin {branch_name}")
                     else:
                         print(f"   ❌ {msg}")
 

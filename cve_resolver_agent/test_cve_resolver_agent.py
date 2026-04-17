@@ -565,6 +565,55 @@ buildscript {
         self.assertEqual(len(grouped["nettyVersion"]), 2)
         self.assertEqual(len(grouped["jacksonVersion"]), 1)
 
+    def test_add_new_variable_indentation(self):
+        """Verifica indentación correcta al agregar nueva variable"""
+        # Crear build.gradle sin la variable jacksonVersion
+        build_file = self.project_path / "build.gradle"
+        build_file.write_text("""buildscript {
+    ext {
+        nettyVersion = '4.1.86.Final'
+    }
+}
+""")
+
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-5678", "jackson-core", "com.fasterxml.jackson.core", "2.17.0", "2.17.2", "HIGH")
+
+        # Actualizar con CVE de Jackson (nueva variable)
+        results = updater.update([cve])
+
+        # Verificar que se agregó la variable
+        self.assertGreater(len(results['updated']), 0)
+
+        # Verificar indentación en el archivo
+        content = build_file.read_text()
+        # La variable debe tener 8 espacios de indentación
+        self.assertIn("        jacksonVersion = '2.17.2'", content)
+        # Verificar estructura: apertura ext, variables, cierre ext
+        self.assertIn("    ext {\n        nettyVersion", content)
+        # Verificar que el cierre del ext tiene 4 espacios
+        lines = content.split('\n')
+        ext_closures = [line for line in lines if line == '    }']
+        self.assertGreaterEqual(len(ext_closures), 1, "Debe haber al menos un cierre de ext con 4 espacios")
+
+    def test_create_buildscript_from_scratch_indentation(self):
+        """Verifica indentación correcta al crear buildscript desde cero"""
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        # El método retorna el nuevo contenido, no modifica el archivo
+        new_content = updater._add_version_to_build("", "nettyVersion", cve)
+
+        # Verificar estructura del bloque creado
+        lines = new_content.split('\n')
+
+        # Verificar línea por línea
+        self.assertEqual(lines[0], "buildscript {")
+        self.assertEqual(lines[1], "    ext {")
+        self.assertTrue(lines[2].startswith("        nettyVersion"))
+        self.assertEqual(lines[3], "    }")
+        self.assertEqual(lines[4], "}")
+
 
 class TestDependencyMgmtUpdater(unittest.TestCase):
     """Tests exhaustivos para _update_dependency_mgmt"""
@@ -736,6 +785,30 @@ buildscript {
 
         # Los backups ahora se crean en el directorio del agente, no en el proyecto
         self.assertGreater(len(updater.backup_manager.created_backups), 0)
+
+    def test_useVersion_indentation(self):
+        """Verifica que el bloque useVersion tenga indentación correcta"""
+        self._create_dependency_mgmt("""configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+    }
+}
+""")
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        updater._update_dependency_mgmt("nettyVersion", cve, dry_run=False)
+
+        content = (self.project_path / "dependencyMgmt.gradle").read_text()
+        # Verificar que el if tiene indentación de 8 espacios
+        self.assertIn("        if (details.requested.group == 'io.netty')", content)
+        # Verificar que el contenido tiene indentación de 12 espacios
+        self.assertIn("            details.useVersion", content)
+        # Verificar que el cierre del if tiene indentación de 8 espacios
+        self.assertIn("        }", content)
+        # Verificar que el cierre del eachDependency tiene indentación de 4 espacios
+        lines = content.split('\n')
+        each_dep_closure = [line for line in lines if line == '    }']
+        self.assertGreaterEqual(len(each_dep_closure), 1, "Debe haber al menos un cierre con 4 espacios")
 
 
 class TestIntegration(unittest.TestCase):

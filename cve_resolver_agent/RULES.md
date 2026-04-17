@@ -1002,10 +1002,11 @@ Generar mensaje de commit
 Crear commit (git commit -m "...")
   │
   ▼
-Mostrar resultado:
-  - Nombre de rama
-  - Hash del commit
-  - Comando para push
+Subir rama (git push -u origin rama)
+  │
+  ├─ Éxito ──▶ Mostrar confirmación
+  │
+  └─ Error ──▶ Mostrar comando manual
 ```
 
 ### 18.6 Manejo de Errores
@@ -1018,10 +1019,11 @@ Mostrar resultado:
 | Error creando rama | `❌ {mensaje}` | Intenta continuar en rama actual |
 | Error en git add | `❌ {mensaje}` | Detiene flujo de commit |
 | Error en commit | `❌ Error creando commit: {mensaje}` | Detiene flujo de commit |
+| Error en push | `⚠️ Error subiendo rama: {mensaje}` | Muestra comando manual |
 
 ### 18.7 Salida en Consola
 
-**Commit Exitoso:**
+**Commit y Push Exitosos:**
 ```
 ============================================================
 📝 GIT COMMIT AUTOMÁTICO
@@ -1045,8 +1047,12 @@ Fixed 8 CVE(s) affecting 5 dependency groups
 ────────────────────────────────────────────────────────────
 
 🎉 Commit creado exitosamente en rama: feature/fix_vulnerabilidad_17042026_juan.perez
-   Para subir los cambios:
-   git push origin feature/fix_vulnerabilidad_17042026_juan.perez
+
+🚀 Subiendo rama al repositorio remoto...
+   ✅ Rama 'feature/fix_vulnerabilidad_17042026_juan.perez' subida a origin
+
+📋 Rama lista para revisión:
+   feature/fix_vulnerabilidad_17042026_juan.perez
 ```
 
 ## 19. Escenarios de Prueba
