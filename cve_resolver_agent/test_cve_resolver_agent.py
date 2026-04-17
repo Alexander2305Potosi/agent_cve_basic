@@ -404,6 +404,180 @@ buildscript {
         self.assertEqual(len(grouped["jacksonVersion"]), 1)
 
 
+class TestDependencyMgmtUpdater(unittest.TestCase):
+    """Tests exhaustivos para _update_dependency_mgmt"""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.temp_path = Path(self.temp_dir)
+        self.project_path = self.temp_path / "project"
+        self.project_path.mkdir()
+
+        # Crear build.gradle básico con variables
+        (self.project_path / "build.gradle").write_text("""
+buildscript {
+    ext {
+        nettyVersion = '4.1.86.Final'
+        jacksonVersion = '2.17.0'
+        commonsCompressVersion = '1.27.0'
+    }
+}
+""")
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    def _create_dependency_mgmt(self, content):
+        """Helper para crear dependencyMgmt.gradle"""
+        dm_file = self.project_path / "dependencyMgmt.gradle"
+        dm_file.write_text(content)
+        return dm_file
+
+    def test_add_useVersion_when_not_exists(self):
+        """Agrega useVersion cuando no existe para el grupo"""
+        self._create_dependency_mgmt("""configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        // empty
+    }
+}
+""")
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        updater._update_dependency_mgmt("nettyVersion", cve, dry_run=False)
+
+        content = (self.project_path / "dependencyMgmt.gradle").read_text()
+        self.assertIn("details.requested.group == 'io.netty'", content)
+        self.assertIn("details.useVersion", content)
+        self.assertIn("nettyVersion", content)
+        self.assertIn("Fix: CVE-2024-1234", content)
+
+    def test_skip_useVersion_when_already_exists(self):
+        """Omite agregar useVersion cuando ya existe para el grupo"""
+        self._create_dependency_mgmt("""configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == 'io.netty') {
+            details.useVersion "${nettyVersion}"
+            details.because "Fix: CVE-OLD"
+        }
+    }
+}
+""")
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        updater._update_dependency_mgmt("nettyVersion", cve, dry_run=False)
+
+        # Verificar que solo hay un bloque para io.netty
+        content = (self.project_path / "dependencyMgmt.gradle").read_text()
+        count = content.count("details.requested.group == 'io.netty'")
+        self.assertEqual(count, 1, "No debe duplicar el bloque useVersion")
+
+    def test_apache_commons_with_name_check(self):
+        """Para Apache Commons, verifica también el nombre del artifact"""
+        self._create_dependency_mgmt("""configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+    }
+}
+""")
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-26308", "commons-compress", "org.apache.commons", "1.26.0", "1.27.1", "HIGH")
+
+        updater._update_dependency_mgmt("commonsCompressVersion", cve, dry_run=False)
+
+        content = (self.project_path / "dependencyMgmt.gradle").read_text()
+        self.assertIn("details.requested.group == 'org.apache.commons'", content)
+        self.assertIn("details.requested.name == 'commons-compress'", content)
+
+    def test_update_configurations_all_to_configureEach(self):
+        """Actualiza configurations.all a configurations.configureEach"""
+        self._create_dependency_mgmt("""configurations.all {
+    resolutionStrategy.eachDependency { details ->
+    }
+}
+""")
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        updater._update_dependency_mgmt("nettyVersion", cve, dry_run=False)
+
+        content = (self.project_path / "dependencyMgmt.gradle").read_text()
+        self.assertIn("configurations.configureEach", content)
+        self.assertNotIn("configurations.all", content)
+
+    def test_no_file_no_error(self):
+        """No falla si dependencyMgmt.gradle no existe"""
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        # No debe lanzar excepción
+        updater._update_dependency_mgmt("nettyVersion", cve, dry_run=False)
+
+    def test_no_resolutionStrategy_block(self):
+        """Maneja archivo sin bloque resolutionStrategy"""
+        self._create_dependency_mgmt("""configurations.configureEach {
+    // Sin resolutionStrategy
+}
+""")
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        # No debe lanzar excepción
+        updater._update_dependency_mgmt("nettyVersion", cve, dry_run=False)
+
+    def test_add_multiple_useVersion_blocks(self):
+        """Puede agregar múltiples bloques useVersion"""
+        self._create_dependency_mgmt("""configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+    }
+}
+""")
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+
+        cve1 = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+        cve2 = CVEEntry("CVE-2024-5678", "jackson-core", "com.fasterxml.jackson.core", "2.17.0", "2.17.2", "HIGH")
+
+        updater._update_dependency_mgmt("nettyVersion", cve1, dry_run=False)
+        updater._update_dependency_mgmt("jacksonVersion", cve2, dry_run=False)
+
+        content = (self.project_path / "dependencyMgmt.gradle").read_text()
+        self.assertIn("io.netty", content)
+        self.assertIn("com.fasterxml.jackson.core", content)
+
+    def test_dry_run_no_changes(self):
+        """En modo dry_run no modifica el archivo"""
+        original_content = """configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+    }
+}
+"""
+        self._create_dependency_mgmt(original_content)
+        updater = GradleCVEUpdater(self.project_path, dry_run=True)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        updater._update_dependency_mgmt("nettyVersion", cve, dry_run=True)
+
+        content = (self.project_path / "dependencyMgmt.gradle").read_text()
+        self.assertEqual(content, original_content)
+
+    def test_backup_created_when_updating(self):
+        """Crea backup cuando actualiza el archivo"""
+        self._create_dependency_mgmt("""configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+    }
+}
+""")
+        updater = GradleCVEUpdater(self.project_path, dry_run=False)
+        cve = CVEEntry("CVE-2024-1234", "netty-codec-http", "io.netty", "4.1.86.Final", "4.1.132.Final", "CRITICAL")
+
+        updater._update_dependency_mgmt("nettyVersion", cve, dry_run=False)
+
+        backup_dir = self.project_path / ".cve_resolver_backups"
+        self.assertTrue(backup_dir.exists())
+        backups = list(backup_dir.glob("*.backup"))
+        self.assertGreater(len(backups), 0)
+
+
 class TestIntegration(unittest.TestCase):
     """Tests de integración que simulan escenarios completos"""
 
@@ -615,6 +789,7 @@ def run_basic_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestSnykCVEProcessor))
     suite.addTests(loader.loadTestsFromTestCase(TestBackupManager))
     suite.addTests(loader.loadTestsFromTestCase(TestGradleCVEUpdater))
+    suite.addTests(loader.loadTestsFromTestCase(TestDependencyMgmtUpdater))
     suite.addTests(loader.loadTestsFromTestCase(TestIntegration))
     suite.addTests(loader.loadTestsFromTestCase(TestGitCommitManager))
 

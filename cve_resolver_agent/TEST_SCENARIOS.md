@@ -1157,9 +1157,10 @@ Speedup: ~5x más rápido
 - [x] TestSnykCVEProcessor: 5 tests
 - [x] TestBackupManager: 3 tests
 - [x] TestGradleCVEUpdater: 3 tests
+- [x] TestDependencyMgmtUpdater: 10 tests (nuevo - exhaustivo para _update_dependency_mgmt)
 - [x] TestIntegration: 4 tests
 - [x] TestGitCommitManager: 6 tests
-- [x] Total: 35 tests passed
+- [x] Total: 44 tests passed
 
 ### Procesamiento Paralelo (v1.0.0) - Monorepo 5 MS
 - [x] Escenario 32b: Bug Fix - Variable `valid_microservices` en modo paralelo
@@ -1223,6 +1224,7 @@ grep "nettyVersion" build.gradle
 - Variables en subcarpetas: Las dependencias en submódulos ahora usan variables (${nettyVersion}) en lugar de versiones hardcodeadas
 - dependencyMgmt.gradle: Ahora agrega correctamente bloques useVersion cuando se crean variables nuevas
 - dependencyMgmt.gradle: Actualiza automáticamente `configurations.all` a `configurations.configureEach` (mejor práctica Gradle moderno)
+- Tests Unitarios: Agregados 10 tests exhaustivos para `_update_dependency_mgmt` (TestDependencyMgmtUpdater)
 - Manejo de señales: Ctrl+C termina el proceso limpiamente sin dejar la consola congelada
 - Debug de rollback: Mensajes adicionales para diagnosticar problemas con backups durante rollback
 - Soporte Java 17/21+: Configura automáticamente `--enable-native-access=ALL-UNNAMED` para evitar errores de acceso nativo

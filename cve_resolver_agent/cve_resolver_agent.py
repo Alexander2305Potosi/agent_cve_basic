@@ -579,10 +579,9 @@ class GradleCVEUpdater:
 
         # Insertar bloque useVersion antes del cierre de resolutionStrategy
         # Buscar el bloque resolutionStrategy.eachDependency y encontrar su cierre
-        # El bloque termina con "}\s*}" (cierre de eachDependency + cierre de configurations.all)
-        # o simplemente buscamos insertar antes del último "}" que cierra el bloque
+        # usando un contador de llaves para ser más robusto que regex
         rs_match = re.search(r'resolutionStrategy\.eachDependency\s*\{', content)
-        if rs_match:
+        if rs_match and version_var:
             # Encontrar el cierre del bloque eachDependency
             # Contar llaves de apertura y cierre para encontrar el final correcto
             start_pos = rs_match.end()
@@ -596,27 +595,12 @@ class GradleCVEUpdater:
                 pos += 1
 
             # El cierre del eachDependency está en pos-1
-            # Ahora buscar el cierre del configurations.all
             each_dep_end = pos - 1
-            remaining = content[each_dep_end:]
-            config_close_match = re.search(r'^\s*\}', remaining)
 
-            if config_close_match:
-                config_close_start = each_dep_end + config_close_match.start()
-                match = type('Match', (), {
-                    'group': lambda self, n: [None, content[:each_dep_end], content[each_dep_end:config_close_start] + config_close_match.group()][n]
-                })()
-            else:
-                match = None
-        else:
-            match = None
-
-        if match and version_var:
             # Escapar el CVE ID para el because
             safe_cve_id = self._escape_gradle_string(cve.cve_id)
 
             # Para org.apache.commons, especificar el artifact específico
-            # ya que el grupo contiene librerías independientes con versiones diferentes
             if cve.group == 'org.apache.commons':
                 use_block = f"""\n        if (details.requested.group == '{cve.group}' && details.requested.name == '{cve.library_name}') {{
             details.useVersion "${{{version_var}}}"
@@ -628,20 +612,19 @@ class GradleCVEUpdater:
             details.because "Fix: {safe_cve_id}"
         }}"""
 
-            new_content = match.group(1) + use_block + match.group(2)
-            content = content.replace(match.group(0), new_content)
+            # Insertar el bloque useVersion antes del cierre de eachDependency
+            new_content = content[:each_dep_end] + use_block + content[each_dep_end:]
 
             if not dry_run:
                 backup_path = self.backup_manager.create_backup(dm_file)
                 print(f"   💾 Backup: {backup_path.name}")
-                dm_file.write_text(content, encoding='utf-8')
+                dm_file.write_text(new_content, encoding='utf-8')
 
             print(f"   ✓ Added useVersion for {cve.group} using ${{{version_var}}}")
-        else:
-            if not match:
-                print(f"   ⚠️  No se encontró bloque resolutionStrategy en dependencyMgmt.gradle")
-            if not version_var:
-                print(f"   ⚠️  No hay variable de versión definida para {cve.group}")
+        elif not rs_match:
+            print(f"   ⚠️  No se encontró bloque resolutionStrategy en dependencyMgmt.gradle")
+        elif not version_var:
+            print(f"   ⚠️  No hay variable de versión definida para {cve.group}")
 
 
 class GradleCompiler:
